@@ -1,0 +1,6 @@
+# Azure AI Projects SDK — verified against azure-ai-projects>=2.5.0
+# Requires Python 3.10+ (azure-ai-projects dropped 3.9 in v2.5.0)
+azure-ai-projects>=2.3.0
+azure-identity
+python-dotenv
+pytest
