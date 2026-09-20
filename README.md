@@ -11,12 +11,13 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 1. [What NexDeal AI Does](#what-nexdeal-ai-does)
 2. [High-Level Architecture](#high-level-architecture)
 3. [Current Status — Phase 0](#current-status--phase-0-foundation)
-4. [What Is Already in Azure](#what-is-already-in-azure)
-5. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
-6. [Prerequisites](#prerequisites)
-7. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
-8. [Running Tests](#running-tests)
-9. [Project Roadmap](#project-roadmap)
+4. [Current Status — Phase 1](#current-status--phase-1-synthetic-data)
+5. [What Is Already in Azure](#what-is-already-in-azure)
+6. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+7. [Prerequisites](#prerequisites)
+8. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
+9. [Running Tests](#running-tests)
+10. [Project Roadmap](#project-roadmap)
 
 ---
 
@@ -71,7 +72,7 @@ Agents use **Entra ID** for authentication (no hard-coded keys anywhere).
 
 ## Current Status — Phase 0: Foundation
 
-**Phase 0 is the only phase currently implemented locally.**
+**Phase 0 is complete and fully preserved.**
 
 | Component | Status |
 |-----------|--------|
@@ -83,6 +84,51 @@ Agents use **Entra ID** for authentication (no hard-coded keys anywhere).
 | Entra ID authentication via `az login` | ✅ Done |
 
 Phase 0 proves that the **local Python environment can authenticate with Microsoft Foundry and call the deployed model using direct Responses API inference** — no agents yet.
+
+---
+
+## Current Status — Phase 1: Synthetic Data
+
+**Phase 1 is complete. No Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `data/products.json` — 12 B2B products | ✅ Done |
+| `data/customers.json` — 8 B2B customer profiles | ✅ Done |
+| `data/business_rules.json` — 7 policy sections | ✅ Done |
+| `tests/data/test_data_integrity.py` — integrity test suite | ✅ Done |
+
+### What the Synthetic Dataset Represents
+
+The three JSON files together form the **authoritative static data layer** for NexDeal AI:
+
+| File | Records | Purpose |
+|------|---------|----------|
+| `data/products.json` | 12 products | B2B product catalogue (Servers, Networking, Storage, Security, Industrial, Power, Cabling) |
+| `data/customers.json` | 8 customers | B2B account profiles across tiers, regions, industries, and account statuses |
+| `data/business_rules.json` | 7 policy sections | Pricing, discount, margin, approval, delivery, installation, and credit policies |
+
+### Why Deterministic Synthetic Data?
+
+- **Reproducibility**: Every test, agent run, and evaluation produces identical results regardless of environment or date.
+- **No external dependencies**: Data loading requires no network access, no database, and no Azure credentials.
+- **Controlled edge cases**: Customer profiles deliberately include blocked accounts (`credit_hold`, `suspended`), `risk` payment histories, and tight credit limits so future tools and agents can be stress-tested against known inputs.
+- **Future-safe**: When Phase 2 deterministic business tools are built (inventory lookup, pricing engine, credit check), they will read these same files — no schema migration needed.
+
+### How to Run the Data Integrity Tests
+
+```powershell
+# From the project root with .venv activated:
+pytest tests/data/test_data_integrity.py -v
+```
+
+Or run the full suite (Phase 0 config tests + Phase 1 data tests together):
+
+```powershell
+pytest tests/ -v
+```
+
+> **Note:** Agents, business tools, orchestration, and Foundry deployments are **not** implemented yet. Phase 1 is exclusively local static data.
 
 ---
 
@@ -106,9 +152,9 @@ The following Azure resources are already created and configured (Azure for Stud
 
 The following are **planned for future phases** and do **not** exist yet:
 
+- [x] ~~**Synthetic data**~~ — ✅ Completed in Phase 1
 - [ ] **Four specialised AI agents** (Request Understanding, Product & Availability, Pricing & Policy, Quote & Risk)
 - [ ] **Business tools** (inventory lookup, pricing engine, credit-check, order creation)
-- [ ] **Synthetic training / evaluation data**
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -225,7 +271,9 @@ Expected output on success:
 pytest tests/ -v
 ```
 
-The test suite is fully offline (no network, no `.env` required):
+The full test suite is **fully offline** (no network, no `.env` required).
+
+### Phase 0 — Configuration Tests (`tests/test_config.py`)
 
 ```
 tests/test_config.py::TestSettingsLoadsCorrectly::test_both_vars_present      PASSED
@@ -238,6 +286,23 @@ tests/test_config.py::TestBlankVariables::test_blank_endpoint_raises          PA
 tests/test_config.py::TestBlankVariables::test_blank_model_raises             PASSED
 ```
 
+### Phase 1 — Data Integrity Tests (`tests/data/test_data_integrity.py`)
+
+Run in isolation:
+
+```powershell
+pytest tests/data/test_data_integrity.py -v
+```
+
+The data integrity suite validates:
+- All three JSON files exist and parse as valid JSON
+- `product_id` and `customer_id` uniqueness
+- Numeric constraints (`unit_price > 0`, `inventory >= 0`, `lead_time_days >= 0`, etc.)
+- Controlled categorical values (tiers, payment histories, account statuses, product statuses)
+- Business rule threshold ordering (e.g., enterprise discount cap ≥ premium ≥ standard)
+- Logical approval threshold ordering (`auto < manager < director < board`)
+- Cross-file consistency (customer tiers match discount policy, discount limits within tier caps)
+
 ---
 
 ## Project Roadmap
@@ -245,7 +310,7 @@ tests/test_config.py::TestBlankVariables::test_blank_model_raises             PA
 | Phase | Description | Status |
 |-------|-------------|--------|
 | **0** | Foundation — Python setup, configuration, Foundry connectivity | ✅ **Complete** |
-| 1 | Synthetic Data — generate representative B2B request samples | ⏳ Not started |
+| **1** | Synthetic Data — deterministic B2B products, customers, business rules | ✅ **Complete** |
 | 2 | Tools — inventory, pricing, credit-check, order-creation | ⏳ Not started |
 | 3 | Agents — four specialised Foundry agents | ⏳ Not started |
 | 4 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |

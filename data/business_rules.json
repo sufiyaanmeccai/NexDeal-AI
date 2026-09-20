@@ -1,0 +1,118 @@
+{
+  "_comment": "NexDeal AI — business_rules.json | Phase 1 synthetic deterministic configuration. All thresholds are intentional policy values, not calculated at runtime.",
+
+  "discount_policy": {
+    "max_discount_by_tier": {
+      "standard": 5,
+      "premium": 15,
+      "enterprise": 20
+    },
+    "volume_discount_brackets": [
+      { "min_order_value_usd": 0,      "max_order_value_usd": 4999,   "additional_discount_pct": 0 },
+      { "min_order_value_usd": 5000,   "max_order_value_usd": 24999,  "additional_discount_pct": 2 },
+      { "min_order_value_usd": 25000,  "max_order_value_usd": 99999,  "additional_discount_pct": 4 },
+      { "min_order_value_usd": 100000, "max_order_value_usd": null,   "additional_discount_pct": 6 }
+    ],
+    "currency": "USD",
+    "notes": "Effective discount = min(tier_max, tier_discount_limit) + volume_additional. Volume discount is additive and never causes total to exceed tier max."
+  },
+
+  "margin_policy": {
+    "minimum_margin_pct_by_category": {
+      "Servers": 18,
+      "Networking": 22,
+      "Storage": 20,
+      "Security": 30,
+      "Industrial": 25,
+      "Power": 20,
+      "Cabling": 15
+    },
+    "absolute_minimum_margin_pct": 12,
+    "low_margin_flag_threshold_pct": 15,
+    "notes": "Orders where effective margin falls below minimum_margin_pct_by_category must be escalated for approval. Absolute minimum blocks order creation."
+  },
+
+  "approval_policy": {
+    "auto_approve_threshold_usd": 25000,
+    "manager_approval_threshold_usd": 75000,
+    "director_approval_threshold_usd": 250000,
+    "board_approval_threshold_usd": 500000,
+    "approval_triggers": [
+      "order_value_exceeds_auto_approve_threshold",
+      "discount_exceeds_tier_limit",
+      "margin_below_category_minimum",
+      "customer_account_status_not_active",
+      "order_value_exceeds_customer_credit_limit",
+      "out_of_stock_partial_fulfilment"
+    ],
+    "notes": "Any single trigger forces manual review. Multiple triggers escalate to next approval tier."
+  },
+
+  "delivery_policy": {
+    "standard_lead_time_buffer_days": 2,
+    "express_surcharge_pct": 15,
+    "express_eligibility_max_lead_time_days": 14,
+    "free_shipping_threshold_usd": 10000,
+    "default_shipping_cost_usd": 250,
+    "regions": {
+      "North America": { "standard_transit_days": 3, "express_transit_days": 1 },
+      "Europe":        { "standard_transit_days": 5, "express_transit_days": 2 },
+      "Asia Pacific":  { "standard_transit_days": 7, "express_transit_days": 3 },
+      "Middle East":   { "standard_transit_days": 8, "express_transit_days": 4 },
+      "Rest of World": { "standard_transit_days": 12, "express_transit_days": 6 }
+    },
+    "notes": "Total delivery estimate = product_lead_time_days + standard_lead_time_buffer_days + region_transit_days. Express replaces transit days."
+  },
+
+  "installation_policy": {
+    "installation_required_categories": ["Servers", "Networking", "Storage", "Power"],
+    "installation_optional_categories": ["Security", "Industrial", "Cabling"],
+    "installation_not_available_categories": [],
+    "installation_scheduling_lead_days": 3,
+    "installation_bundle_discount_pct": 10,
+    "notes": "If installation_available=true on the product, installation can be added. Bundle discount applies when both product and installation are ordered together."
+  },
+
+  "customer_tier_policy": {
+    "tiers": ["standard", "premium", "enterprise"],
+    "tier_benefits": {
+      "standard": {
+        "priority_support": false,
+        "dedicated_account_manager": false,
+        "net_payment_terms_days": 30,
+        "early_access_products": false
+      },
+      "premium": {
+        "priority_support": true,
+        "dedicated_account_manager": false,
+        "net_payment_terms_days": 45,
+        "early_access_products": false
+      },
+      "enterprise": {
+        "priority_support": true,
+        "dedicated_account_manager": true,
+        "net_payment_terms_days": 60,
+        "early_access_products": true
+      }
+    },
+    "upgrade_thresholds": {
+      "standard_to_premium_annual_spend_usd": 50000,
+      "premium_to_enterprise_annual_spend_usd": 200000
+    },
+    "notes": "Tier is reviewed annually. Downgrades require two consecutive years below threshold."
+  },
+
+  "credit_policy": {
+    "valid_account_statuses_for_order": ["active"],
+    "blocked_account_statuses": ["credit_hold", "suspended", "closed"],
+    "credit_utilisation_warning_pct": 80,
+    "credit_utilisation_block_pct": 100,
+    "payment_history_values": ["good", "risk"],
+    "risk_payment_history_actions": [
+      "require_prepayment",
+      "reduce_credit_limit_by_50_pct",
+      "flag_for_credit_team_review"
+    ],
+    "notes": "Orders for accounts with blocked statuses must be rejected or escalated. Risk payment history triggers additional verification regardless of available credit."
+  }
+}

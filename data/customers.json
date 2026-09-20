@@ -1,0 +1,90 @@
+[
+  {
+    "customer_id": "CUST-001",
+    "company_name": "Meridian DataVault Inc.",
+    "customer_tier": "enterprise",
+    "payment_history": "good",
+    "discount_limit": 20,
+    "credit_limit": 500000.00,
+    "account_status": "active",
+    "industry": "Cloud & Managed Services",
+    "region": "North America"
+  },
+  {
+    "customer_id": "CUST-002",
+    "company_name": "Axiom Manufacturing Group",
+    "customer_tier": "premium",
+    "payment_history": "good",
+    "discount_limit": 12,
+    "credit_limit": 150000.00,
+    "account_status": "active",
+    "industry": "Heavy Manufacturing",
+    "region": "Europe"
+  },
+  {
+    "customer_id": "CUST-003",
+    "company_name": "Seabridge Logistics Ltd.",
+    "customer_tier": "standard",
+    "payment_history": "risk",
+    "discount_limit": 5,
+    "credit_limit": 40000.00,
+    "account_status": "credit_hold",
+    "industry": "Logistics & Freight",
+    "region": "Asia Pacific"
+  },
+  {
+    "customer_id": "CUST-004",
+    "company_name": "NovaTech Semiconductor",
+    "customer_tier": "enterprise",
+    "payment_history": "good",
+    "discount_limit": 18,
+    "credit_limit": 750000.00,
+    "account_status": "active",
+    "industry": "Semiconductor & Electronics",
+    "region": "Asia Pacific"
+  },
+  {
+    "customer_id": "CUST-005",
+    "company_name": "Crescent City Power Authority",
+    "customer_tier": "premium",
+    "payment_history": "good",
+    "discount_limit": 10,
+    "credit_limit": 200000.00,
+    "account_status": "active",
+    "industry": "Utilities & Energy",
+    "region": "North America"
+  },
+  {
+    "customer_id": "CUST-006",
+    "company_name": "Harken Retail Solutions",
+    "customer_tier": "standard",
+    "payment_history": "good",
+    "discount_limit": 5,
+    "credit_limit": 30000.00,
+    "account_status": "active",
+    "industry": "Retail",
+    "region": "Europe"
+  },
+  {
+    "customer_id": "CUST-007",
+    "company_name": "Ironclad Defence Systems",
+    "customer_tier": "enterprise",
+    "payment_history": "good",
+    "discount_limit": 15,
+    "credit_limit": 1000000.00,
+    "account_status": "active",
+    "industry": "Defence & Aerospace",
+    "region": "North America"
+  },
+  {
+    "customer_id": "CUST-008",
+    "company_name": "BlueSky Startup Labs",
+    "customer_tier": "standard",
+    "payment_history": "risk",
+    "discount_limit": 3,
+    "credit_limit": 10000.00,
+    "account_status": "suspended",
+    "industry": "Technology Startup",
+    "region": "Europe"
+  }
+]
