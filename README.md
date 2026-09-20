@@ -12,12 +12,13 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 2. [High-Level Architecture](#high-level-architecture)
 3. [Current Status — Phase 0](#current-status--phase-0-foundation)
 4. [Current Status — Phase 1](#current-status--phase-1-synthetic-data)
-5. [What Is Already in Azure](#what-is-already-in-azure)
-6. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
-7. [Prerequisites](#prerequisites)
-8. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
-9. [Running Tests](#running-tests)
-10. [Project Roadmap](#project-roadmap)
+5. [Current Status — Phase 2](#current-status--phase-2-deterministic-business-tools)
+6. [What Is Already in Azure](#what-is-already-in-azure)
+7. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+8. [Prerequisites](#prerequisites)
+9. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
+10. [Running Tests](#running-tests)
+11. [Project Roadmap](#project-roadmap)
 
 ---
 
@@ -132,7 +133,69 @@ pytest tests/ -v
 
 ---
 
-## What Is Already in Azure
+## Current Status — Phase 2: Deterministic Business Tools
+
+**Phase 2 is complete. No Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/tools/data_loader.py` — JSON data loader | ✅ Done |
+| `app/tools/products.py` — Product lookup & search | ✅ Done |
+| `app/tools/customers.py` — Customer lookup & status | ✅ Done |
+| `app/tools/inventory.py` — Inventory availability check | ✅ Done |
+| `app/tools/fulfilment.py` — Delivery feasibility & installation | ✅ Done |
+| `app/tools/pricing.py` — Pricing & discount arithmetic | ✅ Done |
+| `app/tools/policies.py` — Business policy evaluation | ✅ Done |
+| `tests/tools/` — Full Phase 2 test suite (189 tests) | ✅ Done |
+
+### Why a Separate Business Tools Layer?
+
+NexDeal AI enforces a strict separation between **AI reasoning** and **authoritative calculation**:
+
+- **Agents** (future phases) interpret natural language and make decisions.
+- **Business tools** (this phase) perform all arithmetic, lookups, and policy checks using static JSON data.
+
+This means no agent can hallucinate a price, discount, or credit limit — it must call a tool to retrieve the authoritative value. The tools are pure Python functions with no LLM calls, no Azure connections, and no side effects.
+
+### Tool Modules
+
+| Module | Public Functions | Reads From |
+|--------|-----------------|------------|
+| `data_loader.py` | `get_all_products`, `get_product_by_id`, `get_all_customers`, `get_customer_by_id`, `get_business_rules`, and per-section accessors | All three JSON files |
+| `products.py` | `get_product`, `search_products` | `products.json` |
+| `customers.py` | `get_customer`, `get_customer_pricing_tier`, `check_customer_account_status`, `get_customer_credit_info` | `customers.json` |
+| `inventory.py` | `check_inventory` → `InventoryStatus` enum | `products.json` |
+| `fulfilment.py` | `check_delivery_feasibility`, `check_installation_availability`, `get_installation_price` | `products.json`, `business_rules.json` |
+| `pricing.py` | `calculate_subtotal`, `calculate_discount`, `calculate_discounted_total`, `calculate_customer_price`, `calculate_tax`, `calculate_margin` | `products.json`, `customers.json`, `business_rules.json` |
+| `policies.py` | `check_discount_policy`, `check_margin_policy`, `check_approval_policy`, `check_credit_policy` | `customers.json`, `business_rules.json` |
+
+### Design Principles
+
+- **No hardcoded constants**: All thresholds (discount caps, margin minimums, approval levels, credit utilisation limits) are read from `business_rules.json` at call time. Changing a policy requires only editing the JSON, not the Python.
+- **`decimal.Decimal` for all money**: Eliminates floating-point rounding errors in pricing and discount arithmetic (ROUND_HALF_UP convention).
+- **Explicit `reference_date`**: Delivery feasibility accepts a caller-supplied date rather than `datetime.now()`, guaranteeing deterministic test results.
+- **Typed outcomes**: Policy results use string enums (`InventoryStatus`, `DeliveryFeasibility`, `DiscountPolicyOutcome`, etc.) so future agents get machine-readable signals, not freeform text.
+- **Read-only**: No tool modifies JSON files or holds mutable global state accessible to callers.
+
+### How to Run the Phase 2 Tool Tests
+
+```powershell
+# Individual module tests:
+pytest tests/tools/test_products.py -v
+pytest tests/tools/test_customers.py -v
+pytest tests/tools/test_inventory.py -v
+pytest tests/tools/test_fulfilment.py -v
+pytest tests/tools/test_pricing.py -v
+pytest tests/tools/test_policies.py -v
+
+# Full Phase 2 suite:
+pytest tests/tools/ -v
+
+# Complete suite (all phases):
+pytest tests/ -v
+```
+
+> **Note:** AI agents, agent orchestration, and Foundry deployments are **not** implemented yet. Phase 2 is exclusively local Python business logic.
 
 The following Azure resources are already created and configured (Azure for Students subscription):
 
@@ -153,8 +216,8 @@ The following Azure resources are already created and configured (Azure for Stud
 The following are **planned for future phases** and do **not** exist yet:
 
 - [x] ~~**Synthetic data**~~ — ✅ Completed in Phase 1
+- [x] ~~**Business tools**~~ — ✅ Completed in Phase 2 (`app/tools/`)
 - [ ] **Four specialised AI agents** (Request Understanding, Product & Availability, Pricing & Policy, Quote & Risk)
-- [ ] **Business tools** (inventory lookup, pricing engine, credit-check, order creation)
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -303,6 +366,23 @@ The data integrity suite validates:
 - Logical approval threshold ordering (`auto < manager < director < board`)
 - Cross-file consistency (customer tiers match discount policy, discount limits within tier caps)
 
+### Phase 2 — Business Tool Tests (`tests/tools/`)
+
+Run in isolation:
+
+```powershell
+pytest tests/tools/ -v
+```
+
+The Phase 2 suite (189 tests) validates:
+- All six tool modules import and function correctly against real Phase 1 JSON data
+- Exact arithmetic correctness (`calculate_subtotal`, `calculate_discount`, `calculate_margin`)
+- `decimal.Decimal` used throughout pricing (no float rounding errors)
+- Policy thresholds read from `business_rules.json` at runtime (tests explicitly fail if Python hardcodes a different limit)
+- Correct enum outcomes for all policy checks (`AVAILABLE`, `FEASIBLE`, `WITHIN_LIMIT`, `CREDIT_OK`, etc.)
+- Determinism: identical inputs always produce identical outputs
+- Cross-tool consistency: `get_product` price equals `calculate_subtotal` at quantity=1; customer `discount_limit` is always within tier cap
+
 ---
 
 ## Project Roadmap
@@ -311,7 +391,7 @@ The data integrity suite validates:
 |-------|-------------|--------|
 | **0** | Foundation — Python setup, configuration, Foundry connectivity | ✅ **Complete** |
 | **1** | Synthetic Data — deterministic B2B products, customers, business rules | ✅ **Complete** |
-| 2 | Tools — inventory, pricing, credit-check, order-creation | ⏳ Not started |
+| **2** | Tools — deterministic business logic: inventory, pricing, policies, fulfilment | ✅ **Complete** |
 | 3 | Agents — four specialised Foundry agents | ⏳ Not started |
 | 4 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
 | 5 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
