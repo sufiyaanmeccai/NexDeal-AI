@@ -4,3 +4,6 @@ azure-ai-projects>=2.3.0
 azure-identity
 python-dotenv
 pytest
+# Phase 3 — Agent Framework (Foundry) + schema validation
+agent-framework-foundry
+pydantic>=2,<3

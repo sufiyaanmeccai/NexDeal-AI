@@ -13,12 +13,13 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 3. [Current Status — Phase 0](#current-status--phase-0-foundation)
 4. [Current Status — Phase 1](#current-status--phase-1-synthetic-data)
 5. [Current Status — Phase 2](#current-status--phase-2-deterministic-business-tools)
-6. [What Is Already in Azure](#what-is-already-in-azure)
-7. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
-8. [Prerequisites](#prerequisites)
-9. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
-10. [Running Tests](#running-tests)
-11. [Project Roadmap](#project-roadmap)
+6. [Current Status — Phase 3](#current-status--phase-3-request-understanding-agent)
+7. [What Is Already in Azure](#what-is-already-in-azure)
+8. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+9. [Prerequisites](#prerequisites)
+10. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
+11. [Running Tests](#running-tests)
+12. [Project Roadmap](#project-roadmap)
 
 ---
 
@@ -28,7 +29,7 @@ A sales rep at a manufacturer receives a customer email: *"We need 500 units of 
 
 NexDeal AI:
 
-1. **Understands** the request (extracts items, quantities, urgency, customer identity).
+1. **Understands** the request (extracts items, quantities, specifications, customer reference, requested delivery date, services).
 2. **Checks** product availability and realistic delivery windows.
 3. **Calculates** pricing using the correct tier, volume discounts, and applicable policies.
 4. **Evaluates** risk (credit limit, margin, unusual patterns) and decides: auto-approve, flag, or escalate to a human.
@@ -146,7 +147,7 @@ pytest tests/ -v
 | `app/tools/fulfilment.py` — Delivery feasibility & installation | ✅ Done |
 | `app/tools/pricing.py` — Pricing & discount arithmetic | ✅ Done |
 | `app/tools/policies.py` — Business policy evaluation | ✅ Done |
-| `tests/tools/` — Full Phase 2 test suite (189 tests) | ✅ Done |
+| `tests/tools/` — Full Phase 2 test suite (202 tests) | ✅ Done |
 
 ### Why a Separate Business Tools Layer?
 
@@ -195,7 +196,111 @@ pytest tests/tools/ -v
 pytest tests/ -v
 ```
 
-> **Note:** AI agents, agent orchestration, and Foundry deployments are **not** implemented yet. Phase 2 is exclusively local Python business logic.
+> **Note:** Agent orchestration and Foundry deployments for remaining agents are **not** implemented yet. Phase 2 is exclusively local Python business logic.
+
+---
+
+## Current Status — Phase 3: Request Understanding Agent
+
+**Phase 3 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/models/__init__.py` — models package | ✅ Done |
+| `app/models/schemas.py` — `RequestedItem` + `StructuredRequest` Pydantic schemas | ✅ Done |
+| `app/agents/__init__.py` — agents package | ✅ Done |
+| `app/agents/request_understanding.py` — Request Understanding Agent | ✅ Done |
+| `tests/agents/test_request_understanding.py` — unit + boundary test suite (59 tests) | ✅ Done |
+| `scripts/smoke_test_agent.py` — live integration smoke test | ✅ Done |
+| `requirements.txt` updated with `agent-framework-foundry` and `pydantic>=2,<3` | ✅ Done |
+
+### What the Request Understanding Agent Does
+
+The Request Understanding Agent takes a raw, unstructured B2B customer request (email, chat message, form submission) and transforms it into a **validated `StructuredRequest`** object:
+
+```
+Free-text customer email
+        │
+        ▼
+┌─────────────────────────────────────────────────────┐
+│         Request Understanding Agent                 │
+│  (FoundryChatClient + Agent + StructuredRequest)    │
+└─────────────────────────────────────────────────────┘
+        │
+        ▼
+  StructuredRequest
+  ├── request_id: str | None                    (application-assigned; model returns null)
+  ├── raw_request: str                          (original text preserved verbatim)
+  ├── customer_reference: str | None            (customer name or company if stated)
+  ├── requested_items: list[RequestedItem]
+  │         ├── raw_product_reference: str      (customer's exact words, preserved verbatim)
+  │         ├── product_id: str | None          (canonical ID ONLY when customer explicitly supplies one)
+  │         ├── quantity: int | None            (numeric quantity requested)
+  │         └── specifications: list[str]       (strict-schema 'key: value' strings, [] if none)
+  ├── requested_delivery_date: str | None       (ISO 8601 when year explicit; raw phrasing or null if year unspecified)
+  ├── installation_required: bool | None        (true/false/null tri-state)
+  ├── requested_services: list[str]             (additional services requested, [] if none)
+  ├── requested_discount_percent: float | None  (percentage only, never fixed amount)
+  ├── missing_information: list[str]            (missing fulfillment details, [] if none)
+  └── ambiguities: list[str]                    (conflicts/unclear statements, [] if none)
+```
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Client pattern | `Agent(client=FoundryChatClient(...))` | Phase 3 code-first / direct-inference pattern; does not interfere with Phase 0's `AIProjectClient` |
+| Authentication | `AzureCliCredential` | Required by project constraint (no `DefaultAzureCredential`) |
+| Structured outputs | `response_format=StructuredRequest` via `agent.run(..., options={"response_format": ...})` | Agent Framework native structured outputs — no manual JSON parsing |
+| Schema compliance | All fields declared with `Field(...)` (no defaults) | Foundry strict JSON Schema mode requires ALL fields in `required` |
+| Nullable absence | `str \| None` type with no default | Allows model to return `null` for absent info without inventing data |
+| Boundaries | No Phase 2 tool imports | Enforced by architecture test in `test_request_understanding.py` |
+
+### Strict JSON Schema Compliance
+
+Microsoft Foundry's strict JSON Schema mode requires every field to appear in the `required` list. In Pydantic v2, a field only appears in `required` when it has **no default value**. All nullable fields use `X | None` as the type with `Field(...)` — making them required but nullable:
+
+```python
+# ✅ Correct — appears in required, accepts null
+customer_reference: str | None = Field(..., description="...")
+
+# ❌ Wrong — would NOT appear in required, silently omitted
+customer_reference: str | None = None
+```
+
+**Note:** `specifications` uses `list[str]` (not `dict[str, str]`) because Foundry strict mode
+rejects the `additionalProperties` schema that `dict[str, str]` generates.
+Specifications are encoded as `"key: value"` strings (e.g. `["port_count: 48", "colour: black"]`).
+
+This is validated by `TestJsonSchemaCompliance` in the unit test suite.
+
+### Phase 3 Boundaries (Enforced by Tests)
+
+The Request Understanding Agent operates strictly within Phase 3 scope:
+- ✅ Extracts `customer_reference`, `requested_items`, `requested_delivery_date`, `installation_required`, `requested_discount_percent`, `requested_services`, `missing_information`, `ambiguities`
+- ✅ Preserves customer's exact wording in `raw_product_reference` and `raw_request`
+- ✅ Returns null/[] for absent information instead of inventing data
+- ✅ Sets `product_id` only when the customer explicitly supplies a canonical identifier
+- ❌ Does NOT infer `product_id` from descriptive product text
+- ❌ Does NOT check inventory (`app.tools.inventory`)
+- ❌ Does NOT calculate prices or discounts (`app.tools.pricing`)
+- ❌ Does NOT apply business policy rules (`app.tools.policies`)
+- ❌ Does NOT check delivery feasibility (`app.tools.fulfilment`)
+
+These boundaries are enforced by the `TestAgentModuleBoundaries` test class.
+
+### How to Run the Phase 3 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/agents/test_request_understanding.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration smoke test (requires .env and az login):
+python scripts/smoke_test_agent.py
+```
 
 The following Azure resources are already created and configured (Azure for Students subscription):
 
@@ -217,7 +322,8 @@ The following are **planned for future phases** and do **not** exist yet:
 
 - [x] ~~**Synthetic data**~~ — ✅ Completed in Phase 1
 - [x] ~~**Business tools**~~ — ✅ Completed in Phase 2 (`app/tools/`)
-- [ ] **Four specialised AI agents** (Request Understanding, Product & Availability, Pricing & Policy, Quote & Risk)
+- [x] ~~**Request Understanding Agent**~~ — ✅ Completed in Phase 3 (`app/agents/request_understanding.py`)
+- [ ] **Remaining three AI agents** (Product & Availability, Pricing & Policy, Quote & Risk)
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -336,6 +442,8 @@ pytest tests/ -v
 
 The full test suite is **fully offline** (no network, no `.env` required).
 
+Total: **321 tests** across Phases 0–3.
+
 ### Phase 0 — Configuration Tests (`tests/test_config.py`)
 
 ```
@@ -374,7 +482,7 @@ Run in isolation:
 pytest tests/tools/ -v
 ```
 
-The Phase 2 suite (189 tests) validates:
+The Phase 2 suite (202 tests) validates:
 - All six tool modules import and function correctly against real Phase 1 JSON data
 - Exact arithmetic correctness (`calculate_subtotal`, `calculate_discount`, `calculate_margin`)
 - `decimal.Decimal` used throughout pricing (no float rounding errors)
@@ -382,6 +490,34 @@ The Phase 2 suite (189 tests) validates:
 - Correct enum outcomes for all policy checks (`AVAILABLE`, `FEASIBLE`, `WITHIN_LIMIT`, `CREDIT_OK`, etc.)
 - Determinism: identical inputs always produce identical outputs
 - Cross-tool consistency: `get_product` price equals `calculate_subtotal` at quantity=1; customer `discount_limit` is always within tier cap
+
+### Phase 3 — Agent Tests (`tests/agents/`)
+
+Run in isolation:
+
+```powershell
+pytest tests/agents/test_request_understanding.py -v
+```
+
+The Phase 3 suite (59 tests, fully offline) validates:
+- `RequestedItem` and `StructuredRequest` Pydantic construction and field semantics
+- All nullable fields accept `None` but still fail validation when entirely omitted (required in schema)
+- **Strict JSON Schema compliance**: every field appears in `required`; nullable fields use `anyOf:[type, null]` not defaults; `specifications` uses `list[str]` strict-schema representation
+- Product ID contract: canonical IDs preserved when supplied by customer; null when product is descriptive
+- Delivery date contract: ISO 8601 only when year is explicit; raw phrasing or null without guessing a year when year is unspecified
+- Discount contract: percentage-only discounts captured; fixed cash amounts not converted to percentage
+- Tri-state installation flag: explicit true, explicit false, or null when unmentioned
+- Architectural boundaries: no Phase 2 tool imports in the agent module
+- `AzureCliCredential` used (not `DefaultAzureCredential`)
+- `FoundryChatClient` + `Agent` pattern used (not bare `AIProjectClient`)
+
+Live smoke test (requires `.env` and `az login`):
+
+```powershell
+python scripts/smoke_test_agent.py
+```
+
+The smoke test sends a deliberately messy B2B customer email to the deployed Foundry model and validates the returned `StructuredRequest`.
 
 ---
 
@@ -392,11 +528,12 @@ The Phase 2 suite (189 tests) validates:
 | **0** | Foundation — Python setup, configuration, Foundry connectivity | ✅ **Complete** |
 | **1** | Synthetic Data — deterministic B2B products, customers, business rules | ✅ **Complete** |
 | **2** | Tools — deterministic business logic: inventory, pricing, policies, fulfilment | ✅ **Complete** |
-| 3 | Agents — four specialised Foundry agents | ⏳ Not started |
-| 4 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
-| 5 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
-| 6 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
-| 7 | Frontend — web UI or Teams integration | ⏳ Not started |
+| **3** | Request Understanding Agent — structured extraction of customer requests | ✅ **Complete** |
+| 4 | Remaining agents — Product & Availability, Pricing & Policy, Quote & Risk | ⏳ Not started |
+| 5 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
+| 6 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
+| 7 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
+| 8 | Frontend — web UI or Teams integration | ⏳ Not started |
 
 ---
 
