@@ -108,9 +108,12 @@ def test_end_to_end_success(mock_p6, mock_p5, mock_p4, mock_p3):
     # Run
     final_out = run_orchestration_sync("I want 10 routers", "2026-09-22")
     
+    from app.models.schemas import HumanApprovalResult
+    
     # 8. Output Validation
-    assert isinstance(final_out, QuoteRiskResult)
-    assert final_out is res
+    assert isinstance(final_out, HumanApprovalResult)
+    assert final_out.status == "NO_APPROVAL_REQUIRED"
+    assert final_out.original_quote_risk_result is res
     
     # 4. Identity Preservation & 5. Reference Date
     mock_p3.assert_called_once_with("I want 10 routers")
@@ -148,4 +151,5 @@ def test_business_blocker_continues(mock_p6, mock_p5, mock_p4, mock_p3):
     
     # Pipeline did not short circuit! It reached Phase 6.
     mock_p6.assert_called_once_with(req, ful, pri)
-    assert final_out.quote_decision == "CUSTOMER_CLARIFICATION_REQUIRED"
+    assert final_out.status == "NO_APPROVAL_REQUIRED"
+    assert final_out.original_quote_risk_result.quote_decision == "CUSTOMER_CLARIFICATION_REQUIRED"

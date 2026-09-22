@@ -536,3 +536,38 @@ class QuoteRiskResult(BaseModel):
         ...,
         description="Any blocking issues discovered during synthesis."
     )
+
+
+# ===========================================================================
+# Phase 8 — Human Approval Workflow schemas
+# ===========================================================================
+
+class ApprovalRequest(BaseModel):
+    """
+    Typed request emitted to a human reviewer to approve a quote.
+    """
+    request_id: str | None = Field(..., description="Application-assigned request identifier.")
+    customer_reference: str | None = Field(..., description="Customer name or company.")
+    requested_approval_level: Literal["MANAGER_APPROVAL_REQUIRED", "DIRECTOR_APPROVAL_REQUIRED", "BOARD_APPROVAL_REQUIRED"] = Field(
+        ..., description="The tier of approval being requested."
+    )
+    financial_summary_total: str | None = Field(..., description="The total amount of the quote.")
+    risk_indicators: list[str] = Field(..., description="Risk indicators raised during processing.")
+    reasons: list[str] = Field(..., description="Natural language reasons for requiring approval.")
+    approval_question: str = Field(..., description="The specific question posed to the reviewer.")
+
+class ApprovalResponse(BaseModel):
+    """
+    Typed response provided by the human reviewer.
+    """
+    approved: bool = Field(..., description="True if the quote is approved, False if rejected.")
+    reviewer_note: str | None = Field(..., description="Optional notes from the reviewer.")
+
+class HumanApprovalResult(BaseModel):
+    """
+    Result of the Human Approval Gate (Phase 8).
+    """
+    status: Literal["NO_APPROVAL_REQUIRED", "APPROVAL_PENDING", "APPROVED", "REJECTED"] = Field(...)
+    original_quote_risk_result: QuoteRiskResult = Field(...)
+    approval_request: ApprovalRequest | None = Field(...)
+    approval_response: ApprovalResponse | None = Field(...)

@@ -16,12 +16,15 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 6. [Current Status — Phase 3](#current-status--phase-3-request-understanding-agent)
 7. [Current Status — Phase 4](#current-status--phase-4-product--availability-agent)
 8. [Current Status — Phase 5](#current-status--phase-5-pricing--policy-agent)
-9. [What Is Already in Azure](#what-is-already-in-azure)
-10. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
-10. [Prerequisites](#prerequisites)
-11. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
-12. [Running Tests](#running-tests)
-13. [Project Roadmap](#project-roadmap)
+9. [Current Status — Phase 6](#current-status--phase-6-quote--risk-agent)
+10. [Current Status — Phase 7](#current-status--phase-7-multi-agent-orchestration)
+11. [Current Status — Phase 8](#current-status--phase-8-human-approval-workflow)
+12. [What Is Already in Azure](#what-is-already-in-azure)
+13. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+14. [Prerequisites](#prerequisites)
+15. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
+16. [Running Tests](#running-tests)
+17. [Project Roadmap](#project-roadmap)
 
 ---
 
@@ -632,6 +635,47 @@ python scripts/smoke_test_workflow.py
 
 ---
 
+## Current Status — Phase 8: Human Approval Workflow
+
+**Phase 8 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/models/schemas.py` — `ApprovalRequest`, `ApprovalResponse`, `HumanApprovalResult` schemas | ✅ Done |
+| `app/workflows/orchestrator.py` — `ApprovalGateExecutor` implementation with `ctx.request_info` | ✅ Done |
+| `tests/orchestration/test_human_approval.py` — isolated human-in-the-loop tests | ✅ Done |
+| `scripts/smoke_test_human_approval.py` — live pipeline and HITL smoke test | ✅ Done |
+
+### What the Human Approval Workflow Does
+
+The Human Approval Workflow is an explicit, deterministic gate added to the end of the Phase 7 orchestration graph. It enforces the `HUMAN_APPROVAL_REQUIRED` decision made by the Phase 6 Quote & Risk Agent.
+
+When an approval is required (e.g., `MANAGER_APPROVAL_REQUIRED`), the workflow **pauses** execution, emits a typed `ApprovalRequest` to an external reviewer, and waits. Once a human responds with a typed `ApprovalResponse`, the workflow resumes and produces a final deterministic `HumanApprovalResult`.
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| HITL Mechanism | `ctx.request_info(..., ApprovalResponse)` | Native Microsoft `agent-framework` API for pausing and resuming execution with strongly typed contracts. |
+| Approval State | Pending / Paused | Rather than returning a fake "pending" output, the workflow actually suspends execution. It returns a `WorkflowRunResult` event stream that clients can inspect for requests. |
+| Deterministic Resume | `@response_handler` | The framework resumes through `workflow.run(responses=...)`, and Python logic strictly enforces that `approved=True` becomes `APPROVED` and `approved=False` becomes `REJECTED`. The LLM cannot auto-approve or override a rejection. |
+| Scope Limitations | No Persistence/UI | Phase 8 strictly implements the logical orchestration gate. External APIs, databases, email notifications, and frontend UIs are deliberately deferred to future phases. |
+
+### How to Run the Phase 8 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/orchestration/test_human_approval.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration end-to-end smoke test (requires .env and az login):
+python scripts/smoke_test_human_approval.py
+```
+
+---
+
 ## What Is Already in Azure
 
 The following Azure resources are already created and configured (Azure for Students subscription):
@@ -659,7 +703,7 @@ The following are **planned for future phases** and do **not** exist yet:
 - [x] ~~**Pricing & Policy Agent**~~ — ✅ Completed in Phase 5 (`app/agents/pricing_policy.py`)
 - [x] ~~**Quote & Risk Agent**~~ — ✅ Completed in Phase 6 (`app/agents/quote_risk.py`)
 - [x] ~~**Agent orchestration layer**~~ — ✅ Completed in Phase 7 (`app/workflows/orchestrator.py`)
-- [ ] **Human-in-the-loop approval workflow**
+- [x] ~~**Human-in-the-loop approval workflow**~~ — ✅ Completed in Phase 8
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
 - [ ] **Hosted Agent deployment** (containerised agent runtime on Foundry)
 - [ ] **Frontend** (web UI or Teams integration)
@@ -895,10 +939,11 @@ The smoke test constructs a `StructuredRequest` with two items (one descriptive,
 | **4** | Product & Availability Agent — product resolution, inventory & delivery checks | ✅ **Complete** |
 | **5** | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ✅ **Complete** |
 | **6** | Quote & Risk Agent — final quotation, risk scoring, human escalation | ✅ **Complete** |
-| **7** | Orchestration — multi-agent workflow, human-in-the-loop | ✅ **Complete** |
-| 8 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
-| 9 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
-| 10 | Frontend — web UI or Teams integration | ⏳ Not started |
+| **7** | Orchestration — multi-agent workflow | ✅ **Complete** |
+| **8** | Human Approval Workflow — human-in-the-loop | ✅ **Complete** |
+| 9 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
+| 10 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
+| 11 | Frontend — web UI or Teams integration | ⏳ Not started |
 
 ---
 
