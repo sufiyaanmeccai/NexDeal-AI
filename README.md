@@ -15,8 +15,9 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 5. [Current Status — Phase 2](#current-status--phase-2-deterministic-business-tools)
 6. [Current Status — Phase 3](#current-status--phase-3-request-understanding-agent)
 7. [Current Status — Phase 4](#current-status--phase-4-product--availability-agent)
-8. [What Is Already in Azure](#what-is-already-in-azure)
-9. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+8. [Current Status — Phase 5](#current-status--phase-5-pricing--policy-agent)
+9. [What Is Already in Azure](#what-is-already-in-azure)
+10. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
 10. [Prerequisites](#prerequisites)
 11. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
 12. [Running Tests](#running-tests)
@@ -430,6 +431,78 @@ python scripts/smoke_test_product_availability.py
 
 ---
 
+## Current Status — Phase 5: Pricing & Policy Agent
+
+**Phase 5 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/models/schemas.py` — `PricingLineItem` + `PricingPolicyResult` schemas | ✅ Done |
+| `app/agents/pricing_policy.py` — Pricing & Policy Agent logic | ✅ Done |
+| `app/agents/__init__.py` — exports `run_pricing_policy` | ✅ Done |
+| `tests/agents/test_pricing_policy.py` — comprehensive test suite | ✅ Done |
+| `scripts/smoke_test_pricing_policy.py` — live integration smoke test | ✅ Done |
+
+### What the Pricing & Policy Agent Does
+
+The Pricing & Policy Agent takes the `StructuredRequest` (Phase 3) and `FulfilmentResult` (Phase 4), and produces a fully priced quotation while enforcing all business rules:
+
+```
+  StructuredRequest + FulfilmentResult
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│             Pricing & Policy Agent                  │
+│  (FoundryChatClient + Agent + Phase 2 Tools)        │
+│                                                     │
+│  Calls:                                             │
+│   • search_customers                                │
+│   • get_customer                                    │
+│   • calculate_customer_price                        │
+│   • check_discount_policy                           │
+│   • check_credit_policy                             │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+          PricingPolicyResult
+```
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Calculation override | Python calculates final Math | The LLM only drafts; python logic iterates the authoritative Phase 4 items and uses Phase 2 deterministic tools to calculate final numbers. |
+| Discount Policy | Applies strict limit | Discounts above tier limits trigger a policy violation flag, but may be overridable by approvals. |
+| Cost missing | Overall margin is `None` | The current data models do not supply an authoritative cost base. We do not invent costs, so margin triggers force `CLARIFICATION_REQUIRED`. |
+| Missing Installation | Excluded from calculation | Installation price is processed purely based on the deterministic output of Phase 4. |
+
+### Status Precedence
+
+Precedence from **highest to lowest**:
+
+| Priority | Status | Triggered when |
+|----------|--------|----------------|
+| 1 | `CREDIT_BLOCKED` | Credit limit exceeded or account restricted. |
+| 2 | `POLICY_VIOLATION_FATAL` | Margin falls below the absolute minimum limit. |
+| 3 | `CLARIFICATION_REQUIRED` | Incomplete data, skipped items, or lack of authoritative cost to evaluate approval triggers. |
+| 4 | `APPROVAL_REQUIRED` | Valid quote but requires manager/director/board approval based on discounts. |
+| 5 | `READY_FOR_QUOTE` | All commercial and credit rules pass cleanly. |
+
+### How to Run the Phase 5 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/agents/test_pricing_policy.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration smoke test (requires .env and az login):
+python scripts/smoke_test_pricing_policy.py
+```
+
+---
+
 ## What Is Already in Azure
 
 The following Azure resources are already created and configured (Azure for Students subscription):
@@ -454,7 +527,8 @@ The following are **planned for future phases** and do **not** exist yet:
 - [x] ~~**Business tools**~~ — ✅ Completed in Phase 2 (`app/tools/`)
 - [x] ~~**Request Understanding Agent**~~ — ✅ Completed in Phase 3 (`app/agents/request_understanding.py`)
 - [x] ~~**Product & Availability Agent**~~ — ✅ Completed in Phase 4 (`app/agents/product_availability.py`)
-- [ ] **Remaining two AI agents** (Pricing & Policy, Quote & Risk)
+- [x] ~~**Pricing & Policy Agent**~~ — ✅ Completed in Phase 5 (`app/agents/pricing_policy.py`)
+- [ ] **Quote & Risk Agent** (Phase 6)
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -690,7 +764,7 @@ The smoke test constructs a `StructuredRequest` with two items (one descriptive,
 | **2** | Tools — deterministic business logic: inventory, pricing, policies, fulfilment | ✅ **Complete** |
 | **3** | Request Understanding Agent — structured extraction of customer requests | ✅ **Complete** |
 | **4** | Product & Availability Agent — product resolution, inventory & delivery checks | ✅ **Complete** |
-| 5 | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ⏳ Not started |
+| **5** | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ✅ **Complete** |
 | 6 | Quote & Risk Agent — final quotation, risk scoring, human escalation | ⏳ Not started |
 | 7 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
 | 8 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |

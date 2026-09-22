@@ -355,3 +355,132 @@ class FulfilmentResult(BaseModel):
             "Use an empty list [] when there are no issues."
         ),
     )
+
+
+# ===========================================================================
+# Phase 5 — Pricing & Policy Agent output schemas
+# ===========================================================================
+
+
+class PricingLineItem(BaseModel):
+    """
+    Pricing and policy details for a single line item.
+
+    All monetary fields must be strings to preserve exact decimal precision.
+    """
+
+    resolved_product_id: str | None = Field(
+        ...,
+        description="The authoritative product ID, or null if unresolved.",
+    )
+    priced_quantity: int | None = Field(
+        ...,
+        description="The quantity actually priced (based on available inventory), or null if none.",
+    )
+    unit_price: str | None = Field(
+        ...,
+        description="Authoritative unit price as a decimal string, or null.",
+    )
+    subtotal: str | None = Field(
+        ...,
+        description="Gross subtotal as a decimal string (unit_price * priced_quantity), or null.",
+    )
+    applied_discount_amount: str | None = Field(
+        ...,
+        description="Discount amount applied to this line as a decimal string, or null.",
+    )
+    final_price: str | None = Field(
+        ...,
+        description="Net total (subtotal - discount) as a decimal string, or null.",
+    )
+    installation_price: str | None = Field(
+        ...,
+        description="Installation price as a decimal string, or null. Excluded from final_price.",
+    )
+    margin_impact: str | None = Field(
+        ...,
+        description="Margin impact percentage as a decimal string. Currently always null as cost basis is missing.",
+    )
+    line_status: Literal["PRICED", "SKIPPED_UNAVAILABLE", "PRICED_PARTIAL", "NEEDS_CLARIFICATION"] = Field(
+        ...,
+        description=(
+            "PRICED — item fully priced based on requested quantity. "
+            "SKIPPED_UNAVAILABLE — item had no stock or was not found. "
+            "PRICED_PARTIAL — item priced using partial available stock. "
+            "NEEDS_CLARIFICATION — item pricing blocked by ambiguity."
+        ),
+    )
+    issues: list[str] = Field(
+        ...,
+        description="Line-level issues, such as 'Stock shortage' or 'Ambiguous delivery date'.",
+    )
+
+
+class PricingPolicyResult(BaseModel):
+    """
+    Complete pricing and commercial policy outcome for the order.
+
+    All monetary fields must be strings to preserve exact decimal precision.
+    """
+
+    request_id: str | None = Field(
+        ...,
+        description="Echoed from the StructuredRequest.",
+    )
+    customer_reference: str | None = Field(
+        ...,
+        description="Echoed from the StructuredRequest.",
+    )
+    line_items: list[PricingLineItem] = Field(
+        ...,
+        description="Priced line items.",
+    )
+    total_revenue: str | None = Field(
+        ...,
+        description="Total revenue (sum of all final_prices + installation_prices), before tax.",
+    )
+    total_discount: str | None = Field(
+        ...,
+        description="Total monetary discount amount.",
+    )
+    total_tax: str | None = Field(
+        ...,
+        description="Total tax calculated on total_revenue.",
+    )
+    grand_total: str | None = Field(
+        ...,
+        description="Total revenue + total tax.",
+    )
+    overall_margin: str | None = Field(
+        ...,
+        description="Overall margin percentage. Currently always null as cost basis is missing.",
+    )
+    tripped_policies: list[str] = Field(
+        ...,
+        description="List of policy violations or triggers hit (e.g. 'order_value_exceeds_auto_approve_threshold').",
+    )
+    approval_requirement: Literal[
+        "AUTO_APPROVED", "MANAGER_APPROVAL_REQUIRED", "DIRECTOR_APPROVAL_REQUIRED", "BOARD_APPROVAL_REQUIRED", "NOT_EVALUATED"
+    ] = Field(
+        ...,
+        description="Required approval level, or NOT_EVALUATED if required inputs are missing.",
+    )
+    credit_status: Literal[
+        "CREDIT_OK", "CREDIT_LIMIT_EXCEEDED", "ACCOUNT_RESTRICTED", "NOT_EVALUATED"
+    ] = Field(
+        ...,
+        description="Outcome of credit check.",
+    )
+    overall_commercial_status: Literal[
+        "READY_FOR_QUOTE", "APPROVAL_REQUIRED", "CREDIT_BLOCKED", "CLARIFICATION_REQUIRED", "POLICY_VIOLATION_FATAL"
+    ] = Field(
+        ...,
+        description=(
+            "Derived commercial status. "
+            "Any unresolved dependency or NOT_EVALUATED state forces CLARIFICATION_REQUIRED."
+        ),
+    )
+    issues: list[str] = Field(
+        ...,
+        description="Top-level commercial issues or policy blocks.",
+    )
