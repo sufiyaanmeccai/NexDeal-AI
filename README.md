@@ -566,6 +566,72 @@ python scripts/smoke_test_quote_risk.py
 
 ---
 
+## Current Status — Phase 7: Multi-Agent Orchestration
+
+**Phase 7 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/workflows/orchestrator.py` — Graph-based WorkflowBuilder orchestration | ✅ Done |
+| `tests/orchestration/test_workflow.py` — comprehensive test suite | ✅ Done |
+| `scripts/smoke_test_workflow.py` — live integration smoke test | ✅ Done |
+
+### What the Orchestration Workflow Does
+
+The Phase 7 Orchestration pipeline connects the four Specialized Agents (Phase 3 through Phase 6) into a strongly typed graph workflow using Microsoft `agent-framework`'s `WorkflowBuilder`. It avoids conversational/message-history chaining in favor of strictly passing the Pydantic application contracts (`StructuredRequest`, `FulfilmentResult`, `PricingPolicyResult`, `QuoteRiskResult`).
+
+```
+  WorkflowInput (raw_request + reference_date)
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│  Phase 3 Executor (Request Understanding Agent)     │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│  Phase 4 Executor (Product & Availability Agent)    │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│  Phase 5 Executor (Pricing & Policy Agent)          │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│  Phase 6 Executor (Quote & Risk Agent)              │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+           QuoteRiskResult (Final Workflow Output)
+```
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| API Selection | `WorkflowBuilder` (agent-framework) | Provides deterministic, typed graph orchestration without experimental annotations. |
+| Object Propagation | `WorkflowContext.set_state()` | Maintains strict typing without inventing a redundant monolithic envelope schema just for workflow messaging. |
+| Reference Date | Explicit Injection | `reference_date` is strictly provided by the client application (caller) and travels down the graph to Phase 4. `datetime.now()` is forbidden. |
+| Business vs Technical Failures | Complete traversal for business outcomes | Valid business blockers (`UNAVAILABLE`, `PARTIAL`, `CREDIT_BLOCKED`) proceed through the entire pipeline because each subsequent phase requires full lifecycle processing to generate accurate risk/reason logs. Technical exceptions halt the pipeline. |
+| Business Logic | Existing Runners Only | Executes the exact same `run_*` agent entry points. No duplicated Math or agent rules are built into the orchestrator. |
+
+### How to Run the Phase 7 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/orchestration/test_workflow.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration end-to-end smoke test (requires .env and az login):
+python scripts/smoke_test_workflow.py
+```
+
+---
+
 ## What Is Already in Azure
 
 The following Azure resources are already created and configured (Azure for Students subscription):
@@ -592,7 +658,7 @@ The following are **planned for future phases** and do **not** exist yet:
 - [x] ~~**Product & Availability Agent**~~ — ✅ Completed in Phase 4 (`app/agents/product_availability.py`)
 - [x] ~~**Pricing & Policy Agent**~~ — ✅ Completed in Phase 5 (`app/agents/pricing_policy.py`)
 - [x] ~~**Quote & Risk Agent**~~ — ✅ Completed in Phase 6 (`app/agents/quote_risk.py`)
-- [ ] **Agent orchestration layer**
+- [x] ~~**Agent orchestration layer**~~ — ✅ Completed in Phase 7 (`app/workflows/orchestrator.py`)
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
 - [ ] **Hosted Agent deployment** (containerised agent runtime on Foundry)
@@ -829,7 +895,7 @@ The smoke test constructs a `StructuredRequest` with two items (one descriptive,
 | **4** | Product & Availability Agent — product resolution, inventory & delivery checks | ✅ **Complete** |
 | **5** | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ✅ **Complete** |
 | **6** | Quote & Risk Agent — final quotation, risk scoring, human escalation | ✅ **Complete** |
-| 7 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
+| **7** | Orchestration — multi-agent workflow, human-in-the-loop | ✅ **Complete** |
 | 8 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
 | 9 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
 | 10 | Frontend — web UI or Teams integration | ⏳ Not started |
