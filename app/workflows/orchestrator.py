@@ -7,11 +7,32 @@ Connects Phase 3, 4, 5, and 6 into a sequential typed workflow using Microsoft A
 """
 
 import asyncio
+import time
 from datetime import date
 from dataclasses import dataclass
 from typing import Any
 
 from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework.observability import get_meter, get_tracer
+
+from app.telemetry import configure_telemetry
+
+meter = get_meter("nexdeal.orchestrator")
+tracer = get_tracer("nexdeal.orchestrator")
+
+workflow_executions = meter.create_counter(
+    name="nexdeal.workflow.executions",
+    description="Number of workflow executions",
+)
+human_escalations = meter.create_counter(
+    name="nexdeal.workflow.human_escalations",
+    description="Number of quotes escalated for human approval",
+)
+workflow_latency = meter.create_histogram(
+    name="nexdeal.workflow.latency",
+    description="End-to-end workflow execution latency in seconds",
+    unit="s",
+)
 
 from app.models.schemas import (
     StructuredRequest,
@@ -88,43 +109,52 @@ class ApprovalGateExecutor(Executor):
         # Determine if approval is genuinely required
         real_tiers = ["MANAGER_APPROVAL_REQUIRED", "DIRECTOR_APPROVAL_REQUIRED", "BOARD_APPROVAL_REQUIRED"]
         
-        if res.quote_decision == "HUMAN_APPROVAL_REQUIRED" and res.approval_requirement in real_tiers:
-            # We must emit a typed approval request and pause
-            req = ApprovalRequest(
-                request_id=res.request_id,
-                customer_reference=res.customer_reference,
-                requested_approval_level=res.approval_requirement,  # type: ignore
-                financial_summary_total=res.financial_summary_total,
-                risk_indicators=res.risk_indicators,  # type: ignore
-                reasons=res.reasons,
-                approval_question=f"Please review and approve this quote. Total: {res.financial_summary_total}."
-            )
-            
-            ctx.set_state("pending_quote_risk_result", res)
-            ctx.set_state("pending_approval_request", req)
-            
-            await ctx.request_info(req, ApprovalResponse)
-        else:
-            # Bypass approval gate for all other terminal states
-            out = HumanApprovalResult(
-                status="NO_APPROVAL_REQUIRED",
-                original_quote_risk_result=res,
-                approval_request=None,
-                approval_response=None
-            )
-            await ctx.yield_output(out)
+        with tracer.start_as_current_span("approval_gate_process") as span:
+            if res.quote_decision == "HUMAN_APPROVAL_REQUIRED" and res.approval_requirement in real_tiers:
+                span.set_attribute("approval_required", True)
+                span.set_attribute("approval_tier", res.approval_requirement)
+                human_escalations.add(1, {"tier": res.approval_requirement})
+
+                # We must emit a typed approval request and pause
+                req = ApprovalRequest(
+                    request_id=res.request_id,
+                    customer_reference=res.customer_reference,
+                    requested_approval_level=res.approval_requirement,  # type: ignore
+                    financial_summary_total=res.financial_summary_total,
+                    risk_indicators=res.risk_indicators,  # type: ignore
+                    reasons=res.reasons,
+                    approval_question=f"Please review and approve this quote. Total: {res.financial_summary_total}."
+                )
+
+                ctx.set_state("pending_quote_risk_result", res)
+                ctx.set_state("pending_approval_request", req)
+
+                await ctx.request_info(req, ApprovalResponse)
+            else:
+                span.set_attribute("approval_required", False)
+                # Bypass approval gate for all other terminal states
+                out = HumanApprovalResult(
+                    status="NO_APPROVAL_REQUIRED",
+                    original_quote_risk_result=res,
+                    approval_request=None,
+                    approval_response=None
+                )
+                await ctx.yield_output(out)
 
     @response_handler
     async def handle_approval(self, original_request: ApprovalRequest, response: ApprovalResponse, ctx: WorkflowContext[HumanApprovalResult]) -> None:
         """Resumes the workflow when a human response is provided."""
-        res = ctx.get_state("pending_quote_risk_result")
-        req = original_request or ctx.get_state("pending_approval_request")
-        
-        if response.approved:
-            status_val = "APPROVED"
-        else:
-            status_val = "REJECTED"
-            
+        with tracer.start_as_current_span("approval_gate_resume") as span:
+            res = ctx.get_state("pending_quote_risk_result")
+            req = original_request or ctx.get_state("pending_approval_request")
+
+            span.set_attribute("approval_granted", response.approved)
+
+            if response.approved:
+                status_val = "APPROVED"
+            else:
+                status_val = "REJECTED"
+
         out = HumanApprovalResult(
             status=status_val,
             original_quote_risk_result=res,
@@ -136,6 +166,7 @@ class ApprovalGateExecutor(Executor):
 
 def build_orchestration_workflow():
     """Builds and validates the deterministic 4-phase graph workflow."""
+    configure_telemetry()
     p3 = Phase3Executor(id="phase_3_request_understanding")
     p4 = Phase4Executor(id="phase_4_product_availability")
     p5 = Phase5Executor(id="phase_5_pricing_policy")
@@ -155,7 +186,7 @@ def build_orchestration_workflow():
 async def run_orchestration(raw_request: str, reference_date: str) -> HumanApprovalResult | Any:
     """
     Executes the end-to-end NexDeal AI orchestration pipeline.
-    
+
     Args:
         raw_request: The raw customer communication.
         reference_date: The explicitly injected evaluation date (YYYY-MM-DD).
@@ -163,15 +194,25 @@ async def run_orchestration(raw_request: str, reference_date: str) -> HumanAppro
         The final HumanApprovalResult, or the WorkflowRunResult event stream if paused.
     """
     wf = build_orchestration_workflow()
-    
-    events = await wf.run(WorkflowInput(raw_request=raw_request, reference_date=reference_date))
-    
-    outputs = events.get_outputs()
-    if not outputs:
-        # It's paused pending approval, return the event stream so caller can inspect get_request_info_events()
-        return events
-        
-    return outputs[-1]
+
+    start_time = time.perf_counter()
+    try:
+        events = await wf.run(WorkflowInput(raw_request=raw_request, reference_date=reference_date))
+
+        outputs = events.get_outputs()
+        if not outputs:
+            # It's paused pending approval, return the event stream so caller can inspect get_request_info_events()
+            workflow_executions.add(1, {"status": "paused"})
+            return events
+
+        workflow_executions.add(1, {"status": "completed"})
+        return outputs[-1]
+    except Exception:
+        workflow_executions.add(1, {"status": "failed"})
+        raise
+    finally:
+        latency = time.perf_counter() - start_time
+        workflow_latency.record(latency)
 
 
 def run_orchestration_sync(raw_request: str, reference_date: str) -> HumanApprovalResult | Any:

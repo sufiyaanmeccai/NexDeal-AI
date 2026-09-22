@@ -16,6 +16,12 @@ from __future__ import annotations
 
 from decimal import ROUND_HALF_UP, Decimal
 
+from agent_framework.observability import get_tracer
+
+from app.config import settings
+
+tracer = get_tracer("nexdeal.pricing")
+
 from app.tools.data_loader import (
     get_discount_policy,
     get_product_by_id,
@@ -192,60 +198,64 @@ def calculate_customer_price(
     ------
     ProductNotFoundError / CustomerNotFoundError / ValueError
     """
-    if not isinstance(quantity, int) or isinstance(quantity, bool):
-        raise TypeError(f"quantity must be an int, got {type(quantity).__name__!r}")
-    if quantity <= 0:
-        raise ValueError(f"quantity must be >= 1, got {quantity}")
+    with tracer.start_as_current_span("calculate_customer_price") as span:
+        span.set_attribute("product_id", product_id)
+        span.set_attribute("quantity", quantity)
+        if settings.log_sensitive_data:
+            span.set_attribute("customer_id", customer_id)
 
-    subtotal = calculate_subtotal(product_id, quantity)
-    unit_price = _get_product_unit_price(product_id)
+        if not isinstance(quantity, int) or isinstance(quantity, bool):
+            raise TypeError(f"quantity must be an int, got {type(quantity).__name__!r}")
+        if quantity <= 0:
+            raise ValueError(f"quantity must be >= 1, got {quantity}")
+        subtotal = calculate_subtotal(product_id, quantity)
+        unit_price = _get_product_unit_price(product_id)
 
-    # Customer data
-    from app.tools.data_loader import get_customer_by_id
-    record = get_customer_by_id(customer_id.strip() if isinstance(customer_id, str) else customer_id)
-    if record is None:
-        raise CustomerNotFoundError(
-            f"Customer '{customer_id}' not found; cannot calculate customer price."
-        )
+        # Customer data
+        from app.tools.data_loader import get_customer_by_id
+        record = get_customer_by_id(customer_id.strip() if isinstance(customer_id, str) else customer_id)
+        if record is None:
+            raise CustomerNotFoundError(
+                f"Customer '{customer_id}' not found; cannot calculate customer price."
+            )
 
-    tier = record["customer_tier"]
-    customer_discount_limit = Decimal(str(record["discount_limit"]))
+        tier = record["customer_tier"]
+        customer_discount_limit = Decimal(str(record["discount_limit"]))
 
-    # Policy from JSON
-    policy = get_discount_policy()
-    tier_cap = Decimal(str(policy["max_discount_by_tier"][tier]))
+        # Policy from JSON
+        policy = get_discount_policy()
+        tier_cap = Decimal(str(policy["max_discount_by_tier"][tier]))
 
-    # Volume bracket — match the subtotal
-    volume_additional = Decimal("0")
-    for bracket in policy["volume_discount_brackets"]:
-        min_val = Decimal(str(bracket["min_order_value_usd"]))
-        max_val = bracket["max_order_value_usd"]
-        max_val_d = Decimal(str(max_val)) if max_val is not None else None
-        if subtotal >= min_val and (max_val_d is None or subtotal <= max_val_d):
-            volume_additional = Decimal(str(bracket["additional_discount_pct"]))
-            break
+        # Volume bracket — match the subtotal
+        volume_additional = Decimal("0")
+        for bracket in policy["volume_discount_brackets"]:
+            min_val = Decimal(str(bracket["min_order_value_usd"]))
+            max_val = bracket["max_order_value_usd"]
+            max_val_d = Decimal(str(max_val)) if max_val is not None else None
+            if subtotal >= min_val and (max_val_d is None or subtotal <= max_val_d):
+                volume_additional = Decimal(str(bracket["additional_discount_pct"]))
+                break
 
-    # Effective discount: cap at tier_cap
-    base = min(customer_discount_limit, tier_cap)
-    effective_discount = min(base + volume_additional, tier_cap)
+        # Effective discount: cap at tier_cap
+        base = min(customer_discount_limit, tier_cap)
+        effective_discount = min(base + volume_additional, tier_cap)
 
-    discount_amount = calculate_discount(subtotal, effective_discount)
-    net_total = _round_money(subtotal - discount_amount)
-
-    return {
-        "product_id": product_id.strip(),
-        "customer_id": customer_id.strip() if isinstance(customer_id, str) else customer_id,
-        "quantity": quantity,
-        "unit_price": unit_price,
-        "subtotal": subtotal,
-        "customer_tier": tier,
-        "tier_discount_cap": tier_cap,
-        "customer_discount": customer_discount_limit,
-        "volume_discount_additional": volume_additional,
-        "effective_discount": effective_discount,
-        "discount_amount": discount_amount,
-        "net_total": net_total,
-    }
+        discount_amount = calculate_discount(subtotal, effective_discount)
+        net_total = _round_money(subtotal - discount_amount)
+        return {
+            "product_id": product_id.strip(),
+            "customer_id": customer_id.strip() if isinstance(customer_id, str) else customer_id,
+            "quantity": quantity,
+            "unit_price": unit_price,
+            "subtotal": subtotal,
+            "customer_tier": tier,
+            "tier_discount_cap": tier_cap,
+            "customer_discount": customer_discount_limit,
+            "volume_discount_additional": volume_additional,
+            "effective_discount": effective_discount,
+            "discount_amount": discount_amount,
+            "net_total": net_total,
+        }
 
 
 def calculate_tax(

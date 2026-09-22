@@ -7,3 +7,7 @@ pytest
 # Phase 3 — Agent Framework (Foundry) + schema validation
 agent-framework-foundry
 pydantic>=2,<3
+# Phase 9 - Observability
+opentelemetry-api
+opentelemetry-sdk
+azure-monitor-opentelemetry

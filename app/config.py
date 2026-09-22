@@ -41,6 +41,15 @@ class Settings:
     foundry_model_name: str
     """Deployment name of the model in your Foundry project (not the model family name)."""
 
+    enable_telemetry: bool
+    """Whether to configure telemetry exporters/providers (Azure or local console)."""
+
+    applicationinsights_connection_string: str | None
+    """Azure Monitor connection string. If missing but telemetry is enabled, defaults to local console exporter."""
+
+    log_sensitive_data: bool
+    """Whether to capture and emit sensitive data like customer names or raw requests."""
+
 
 def load_settings() -> Settings:
     """Load .env, validate required variables, and return a Settings instance."""
@@ -52,6 +61,9 @@ def load_settings() -> Settings:
     return Settings(
         foundry_project_endpoint=_require("FOUNDRY_PROJECT_ENDPOINT"),
         foundry_model_name=_require("FOUNDRY_MODEL_NAME"),
+        enable_telemetry=os.environ.get("ENABLE_TELEMETRY", "false").strip().lower() == "true",
+        applicationinsights_connection_string=os.environ.get("APPLICATIONINSIGHTS_CONNECTION_STRING", "").strip() or None,
+        log_sensitive_data=os.environ.get("LOG_SENSITIVE_DATA", "false").strip().lower() == "true",
     )
 
 
