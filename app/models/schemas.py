@@ -1,8 +1,8 @@
 """
-app/models/schemas.py — NexDeal AI  |  Phase 3 Pydantic schemas
+app/models/schemas.py — NexDeal AI  |  Phases 3 & 4 Pydantic schemas
 
 Defines the CANONICAL structured output types produced by the Request
-Understanding Agent.
+Understanding Agent (Phase 3) and the Product & Availability Agent (Phase 4).
 
 Design constraints
 ------------------
@@ -13,16 +13,20 @@ Design constraints
   every field in ``required`` while still allowing the model to return JSON
   null (or an empty collection) when the information is absent.
 
-* Collections that may be empty (``requested_items``, ``requested_services``,
-  ``missing_information``, ``ambiguities``, ``specifications``) are typed as
-  plain list/dict — never Optional — so the model returns ``[]`` / ``{}``
-  rather than null when nothing is present.
+* Collections that may be empty are typed as plain list — never Optional —
+  so the model returns ``[]`` rather than null when nothing is present.
 
-* No business-rule concerns here — no prices, no inventory, no canonical IDs.
-  The agent only *understands* the request; later pipeline stages do the rest.
+* Status fields use ``Literal[...]`` to prevent the LLM from inventing
+  arbitrary status names.  This is enforced by Pydantic validation on
+  construction, not just by documentation.
+
+* ``FulfilmentResult`` and ``FulfilmentItemResult`` are produced by Phase 4.
+  Phase 3's ``StructuredRequest`` is NOT modified.
 """
 
 from __future__ import annotations
+
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -167,5 +171,187 @@ class StructuredRequest(BaseModel):
             "List of conflicting or unclear statements detected in the request "
             "(e.g. 'two different delivery dates mentioned'). "
             "Use an empty list [] when none are detected."
+        ),
+    )
+
+
+# ===========================================================================
+# Phase 4 — Product & Availability Agent output schemas
+# ===========================================================================
+
+
+class FulfilmentItemResult(BaseModel):
+    """
+    Availability result for a single product line-item from a StructuredRequest.
+
+    Produced by the Product & Availability Agent.  All fields appear in the
+    JSON schema ``required`` list (Foundry strict mode).
+
+    Key contracts
+    -------------
+    * ``resolved_product_id`` — null when product could not be uniquely
+      resolved; the authoritative value comes from Phase 2 ``get_product``.
+    * ``available_quantity`` — null when inventory was not checked (e.g. product
+      unresolved); otherwise the authoritative value from Phase 2
+      ``check_inventory``.
+    * ``installation_price`` — stored as a decimal string (e.g. ``"450.00"``)
+      to avoid floating-point representation errors from the Phase 2 Decimal layer.
+    * Status fields use ``Literal[...]`` — invalid strings are rejected by Pydantic.
+    """
+
+    raw_product_reference: str = Field(
+        ...,
+        description=(
+            "The customer's original product description from the StructuredRequest, "
+            "preserved verbatim."
+        ),
+    )
+    resolved_product_id: str | None = Field(
+        ...,
+        description=(
+            "Authoritative product ID after resolution. "
+            "Null when unresolved (AMBIGUOUS or NOT_FOUND)."
+        ),
+    )
+    product_resolution_status: Literal["RESOLVED", "AMBIGUOUS", "NOT_FOUND"] = Field(
+        ...,
+        description=(
+            "RESOLVED — exactly one catalogue match found and confirmed via get_product. "
+            "AMBIGUOUS — multiple plausible matches; clarification needed. "
+            "NOT_FOUND — no catalogue match found."
+        ),
+    )
+    requested_quantity: int | None = Field(
+        ...,
+        description="Quantity from the StructuredRequest, or null if not specified.",
+    )
+    available_quantity: int | None = Field(
+        ...,
+        description=(
+            "Authoritative available quantity from check_inventory. "
+            "Null when product is unresolved or inventory was not checked."
+        ),
+    )
+    inventory_status: Literal["AVAILABLE", "PARTIAL", "UNAVAILABLE", "NOT_EVALUATED"] = Field(
+        ...,
+        description=(
+            "AVAILABLE — full quantity in stock. "
+            "PARTIAL — some stock but less than requested. "
+            "UNAVAILABLE — zero stock. "
+            "NOT_EVALUATED — product unresolved or quantity unknown."
+        ),
+    )
+    requested_delivery_date: str | None = Field(
+        ...,
+        description=(
+            "Delivery date from the StructuredRequest. "
+            "Null when not specified. May be an incomplete date (e.g. '15 October') "
+            "if the year was not specified — do NOT normalise here."
+        ),
+    )
+    delivery_status: Literal[
+        "FEASIBLE", "INFEASIBLE", "NOT_REQUESTED", "NEEDS_CLARIFICATION", "NOT_EVALUATED"
+    ] = Field(
+        ...,
+        description=(
+            "FEASIBLE — delivery can be achieved by the requested date. "
+            "INFEASIBLE — earliest dispatch is after the requested date. "
+            "NOT_REQUESTED — no delivery date was specified. "
+            "NEEDS_CLARIFICATION — date is incomplete (e.g. missing year) so "
+            "delivery cannot be evaluated. "
+            "NOT_EVALUATED — product unresolved; delivery not checked."
+        ),
+    )
+    installation_required: bool | None = Field(
+        ...,
+        description=(
+            "True/False as stated in StructuredRequest, or null if unspecified."
+        ),
+    )
+    installation_status: Literal[
+        "AVAILABLE", "UNAVAILABLE", "NOT_REQUESTED", "NEEDS_CLARIFICATION", "NOT_EVALUATED"
+    ] = Field(
+        ...,
+        description=(
+            "AVAILABLE — installation offered and confirmed available for this product. "
+            "UNAVAILABLE — installation not available for this product. "
+            "NOT_REQUESTED — customer explicitly said installation is not needed, "
+            "or installation_required is false. "
+            "NEEDS_CLARIFICATION — installation_required is null; cannot determine. "
+            "NOT_EVALUATED — product unresolved."
+        ),
+    )
+    installation_price: str | None = Field(
+        ...,
+        description=(
+            "Authoritative installation price as a decimal string (e.g. '450.00'), "
+            "taken directly from the Phase 2 tool without floating-point conversion. "
+            "Null when installation is not available, not requested, or product is unresolved."
+        ),
+    )
+    issues: list[str] = Field(
+        ...,
+        description=(
+            "Human-readable descriptions of any problems encountered for this item "
+            "(e.g. 'Product not found', 'Delivery year unspecified', "
+            "'Only 5 units available, 10 requested'). "
+            "Use an empty list [] when there are no issues."
+        ),
+    )
+
+
+class FulfilmentResult(BaseModel):
+    """
+    Complete availability determination for a StructuredRequest.
+
+    Produced by the Product & Availability Agent.  All fields appear in the
+    JSON schema ``required`` list (Foundry strict mode).
+
+    ``overall_status`` is ALWAYS computed deterministically by the application
+    layer from the per-item results.  The LLM output is overwritten by Python
+    logic before returning this object.
+    """
+
+    request_id: str | None = Field(
+        ...,
+        description="Echoed from the StructuredRequest.request_id.",
+    )
+    customer_reference: str | None = Field(
+        ...,
+        description="Echoed from the StructuredRequest.customer_reference.",
+    )
+    items: list[FulfilmentItemResult] = Field(
+        ...,
+        description="Per-item availability results, one per RequestedItem in the StructuredRequest.",
+    )
+    overall_status: Literal[
+        "READY",
+        "PARTIAL",
+        "UNAVAILABLE",
+        "CLARIFICATION_REQUIRED",
+        "DELIVERY_CONFLICT",
+        "INSTALLATION_UNAVAILABLE",
+    ] = Field(
+        ...,
+        description=(
+            "Application-derived summary status (NOT trusted from LLM output). "
+            "Precedence (highest first): "
+            "1. CLARIFICATION_REQUIRED — any unresolved product or incomplete date. "
+            "2. INSTALLATION_UNAVAILABLE — any installation-required item unavailable. "
+            "3. DELIVERY_CONFLICT — any infeasible delivery. "
+            "4. UNAVAILABLE — any item with zero stock. "
+            "5. PARTIAL — any item with partial stock. "
+            "6. READY — all required checks pass."
+        ),
+    )
+    clarification_required: bool = Field(
+        ...,
+        description="True when overall_status is CLARIFICATION_REQUIRED.",
+    )
+    issues: list[str] = Field(
+        ...,
+        description=(
+            "Aggregated top-level issues across all items. "
+            "Use an empty list [] when there are no issues."
         ),
     )

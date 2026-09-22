@@ -14,12 +14,13 @@ NexDeal AI transforms messy B2B customer requests (emails, messages, faxes) into
 4. [Current Status — Phase 1](#current-status--phase-1-synthetic-data)
 5. [Current Status — Phase 2](#current-status--phase-2-deterministic-business-tools)
 6. [Current Status — Phase 3](#current-status--phase-3-request-understanding-agent)
-7. [What Is Already in Azure](#what-is-already-in-azure)
-8. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
-9. [Prerequisites](#prerequisites)
-10. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
-11. [Running Tests](#running-tests)
-12. [Project Roadmap](#project-roadmap)
+7. [Current Status — Phase 4](#current-status--phase-4-product--availability-agent)
+8. [What Is Already in Azure](#what-is-already-in-azure)
+9. [What Is NOT Yet Implemented](#what-is-not-yet-implemented)
+10. [Prerequisites](#prerequisites)
+11. [Setup & Running the Smoke Test](#setup--running-the-smoke-test)
+12. [Running Tests](#running-tests)
+13. [Project Roadmap](#project-roadmap)
 
 ---
 
@@ -316,6 +317,135 @@ The following Azure resources are already created and configured (Azure for Stud
 
 ---
 
+## Current Status — Phase 4: Product & Availability Agent
+
+**Phase 4 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/models/schemas.py` — `FulfilmentItemResult` + `FulfilmentResult` Pydantic schemas | ✅ Done |
+| `app/agents/product_availability.py` — Product & Availability Agent | ✅ Done |
+| `app/agents/__init__.py` — exports `check_availability`, `check_availability_sync` | ✅ Done |
+| `tests/agents/test_product_availability.py` — unit + boundary test suite (99 tests) | ✅ Done |
+| `scripts/smoke_test_product_availability.py` — live integration smoke test | ✅ Done |
+
+### What the Product & Availability Agent Does
+
+The Product & Availability Agent receives a validated `StructuredRequest` from Phase 3 and determines whether each requested product can be fulfilled:
+
+```
+  StructuredRequest (Phase 3 output)
+         │
+         ▼
+┌─────────────────────────────────────────────────────────┐
+│         Product & Availability Agent                    │
+│  (FoundryChatClient + Agent + Phase 2 Tools)            │
+│                                                         │
+│  Calls:                                                 │
+│   • search_products  — resolve descriptive references   │
+│   • get_product      — confirm authoritative product    │
+│   • check_inventory  — stock availability               │
+│   • check_delivery_feasibility — delivery date check    │
+│   • check_installation_availability — install check     │
+└─────────────────────────────────────────────────────────┘
+         │
+         ▼
+  FulfilmentResult
+  ├── request_id: str | None            (echoed from StructuredRequest)
+  ├── customer_reference: str | None    (echoed from StructuredRequest)
+  ├── items: list[FulfilmentItemResult]
+  │       ├── raw_product_reference: str          (customer's exact words)
+  │       ├── resolved_product_id: str | None     (authoritative ID or null)
+  │       ├── product_resolution_status: Literal  (RESOLVED | AMBIGUOUS | NOT_FOUND)
+  │       ├── requested_quantity: int | None
+  │       ├── available_quantity: int | None      (authoritative from check_inventory)
+  │       ├── inventory_status: Literal           (AVAILABLE | PARTIAL | UNAVAILABLE | NOT_EVALUATED)
+  │       ├── requested_delivery_date: str | None (echoed from StructuredRequest)
+  │       ├── delivery_status: Literal            (FEASIBLE | INFEASIBLE | NOT_REQUESTED | NEEDS_CLARIFICATION | NOT_EVALUATED)
+  │       ├── installation_required: bool | None
+  │       ├── installation_status: Literal        (AVAILABLE | UNAVAILABLE | NOT_REQUESTED | NEEDS_CLARIFICATION | NOT_EVALUATED)
+  │       ├── installation_price: str | None      (decimal string, e.g. "450.00")
+  │       └── issues: list[str]
+  ├── overall_status: Literal           (application-derived — see precedence below)
+  ├── clarification_required: bool
+  └── issues: list[str]
+```
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Client pattern | `Agent(client=FoundryChatClient(...), tools=[...])` | Same code-first pattern as Phase 3; tools registered via `@tool` decorator |
+| Authentication | `AzureCliCredential` | Same as Phase 3; no `DefaultAzureCredential` |
+| Tool registration | `@tool` decorator on wrapper functions | Agent Framework native pattern; generates JSON Schema automatically |
+| Structured output | `response_format=FulfilmentResult` | Foundry strict JSON Schema; all 6 + 12 fields in `required` |
+| `installation_price` as string | `str` (e.g. `"450.00"`) | Avoids `Decimal → float → JSON` precision issues |
+| `reference_date` injection | Explicit `date` parameter on `check_availability()` | No clock calls — fully deterministic for testing |
+| `overall_status` enforcement | Python `_derive_overall_status()` overwrites LLM value | LLM values for status fields are NOT trusted; deterministic logic always wins |
+
+### Status Precedence (`overall_status` derivation)
+
+The application layer computes `overall_status` deterministically after the agent responds.
+Precedence from **highest to lowest**:
+
+| Priority | Status | Triggered when |
+|----------|--------|----------------|
+| 1 | `CLARIFICATION_REQUIRED` | Any item unresolved (AMBIGUOUS/NOT_FOUND) OR delivery date is incomplete | 
+| 2 | `INSTALLATION_UNAVAILABLE` | Any resolved item where installation is required but unavailable |
+| 3 | `DELIVERY_CONFLICT` | Any item with infeasible delivery date |
+| 4 | `UNAVAILABLE` | Any item with zero stock |
+| 5 | `PARTIAL` | Any item with partial stock |
+| 6 | `READY` | All required checks pass |
+
+### Phase 4 Boundaries (Enforced by Tests)
+
+The Product & Availability Agent operates strictly within Phase 4 scope:
+
+**Allowed tools** (Phase 2 product/fulfilment domain only):
+- ✅ `search_products` — keyword search to resolve descriptive product references
+- ✅ `get_product` — confirm authoritative product record by ID
+- ✅ `check_inventory` — authoritative stock availability
+- ✅ `check_delivery_feasibility` — delivery date feasibility with explicit reference_date
+- ✅ `check_installation_availability` — installation availability and price
+
+**Forbidden tools** (enforced by architecture tests):
+- ❌ `calculate_customer_price`, `calculate_tax`, `calculate_discount`, `calculate_margin` (pricing)
+- ❌ `check_discount_policy`, `check_margin_policy`, `check_approval_policy` (policies)
+- ❌ `get_customer`, `check_customer_account_status`, `get_customer_credit_info` (customers)
+
+These boundaries are enforced by `TestArchitecturalBoundaries` in the unit test suite.
+
+### How to Run the Phase 4 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/agents/test_product_availability.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration smoke test (requires .env and az login):
+python scripts/smoke_test_product_availability.py
+```
+
+---
+
+## What Is Already in Azure
+
+The following Azure resources are already created and configured (Azure for Students subscription):
+
+| Resource | Detail |
+|----------|--------|
+| Azure subscription | Azure for Students ($100 credit) |
+| Region | Korea Central |
+| Foundry resource | Created |
+| Foundry project | Created |
+| Model deployment | `gpt-4.1-mini` — Global Standard — already deployed |
+
+> **Cost control:** No monitoring resources, Application Insights, storage accounts, or additional deployments have been created. The Phase 0 smoke test uses the existing `gpt-4.1-mini` deployment exclusively.
+
+---
+
 ## What Is NOT Yet Implemented
 
 The following are **planned for future phases** and do **not** exist yet:
@@ -323,7 +453,8 @@ The following are **planned for future phases** and do **not** exist yet:
 - [x] ~~**Synthetic data**~~ — ✅ Completed in Phase 1
 - [x] ~~**Business tools**~~ — ✅ Completed in Phase 2 (`app/tools/`)
 - [x] ~~**Request Understanding Agent**~~ — ✅ Completed in Phase 3 (`app/agents/request_understanding.py`)
-- [ ] **Remaining three AI agents** (Product & Availability, Pricing & Policy, Quote & Risk)
+- [x] ~~**Product & Availability Agent**~~ — ✅ Completed in Phase 4 (`app/agents/product_availability.py`)
+- [ ] **Remaining two AI agents** (Pricing & Policy, Quote & Risk)
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -442,7 +573,7 @@ pytest tests/ -v
 
 The full test suite is **fully offline** (no network, no `.env` required).
 
-Total: **321 tests** across Phases 0–3.
+Total: **420 tests** across Phases 0–4.
 
 ### Phase 0 — Configuration Tests (`tests/test_config.py`)
 
@@ -491,7 +622,7 @@ The Phase 2 suite (202 tests) validates:
 - Determinism: identical inputs always produce identical outputs
 - Cross-tool consistency: `get_product` price equals `calculate_subtotal` at quantity=1; customer `discount_limit` is always within tier cap
 
-### Phase 3 — Agent Tests (`tests/agents/`)
+### Phase 3 — Agent Tests (`tests/agents/test_request_understanding.py`)
 
 Run in isolation:
 
@@ -519,6 +650,35 @@ python scripts/smoke_test_agent.py
 
 The smoke test sends a deliberately messy B2B customer email to the deployed Foundry model and validates the returned `StructuredRequest`.
 
+### Phase 4 — Agent Tests (`tests/agents/test_product_availability.py`)
+
+Run in isolation:
+
+```powershell
+pytest tests/agents/test_product_availability.py -v
+```
+
+The Phase 4 suite (99 tests, fully offline) validates:
+- `FulfilmentItemResult` and `FulfilmentResult` Pydantic construction and field semantics
+- All 12 + 6 fields appear in JSON schema `required` list (Foundry strict mode)
+- Literal status fields reject invalid values at construction time
+- `_derive_overall_status` precedence: all 6 outcomes with mixed-item scenarios
+- **Tool wrapper behaviour**: `tool_search_products`, `tool_get_product`, `tool_check_inventory`, `tool_check_delivery_feasibility`, `tool_check_installation_availability` — happy path, error handling, type safety
+- **Price field safety**: `unit_price` never appears in tool wrapper responses; `installation_price` is always a decimal string
+- Application-level `overall_status` enforcement: LLM output is overwritten by Python logic
+- Architectural boundaries: no pricing/policy/customer tool imports
+- `AzureCliCredential` used (not `DefaultAzureCredential`)
+- `reference_date` is a keyword-only parameter (clock injection, not `date.today()`)
+- Tool list contains exactly the 5 allowed Phase 2 tools
+
+Live smoke test (requires `.env` and `az login`):
+
+```powershell
+python scripts/smoke_test_product_availability.py
+```
+
+The smoke test constructs a `StructuredRequest` with two items (one descriptive, one with an explicit `product_id`), calls the live Foundry agent, and asserts the returned `FulfilmentResult` structure and per-item resolution logic.
+
 ---
 
 ## Project Roadmap
@@ -529,11 +689,13 @@ The smoke test sends a deliberately messy B2B customer email to the deployed Fou
 | **1** | Synthetic Data — deterministic B2B products, customers, business rules | ✅ **Complete** |
 | **2** | Tools — deterministic business logic: inventory, pricing, policies, fulfilment | ✅ **Complete** |
 | **3** | Request Understanding Agent — structured extraction of customer requests | ✅ **Complete** |
-| 4 | Remaining agents — Product & Availability, Pricing & Policy, Quote & Risk | ⏳ Not started |
-| 5 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
-| 6 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
-| 7 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
-| 8 | Frontend — web UI or Teams integration | ⏳ Not started |
+| **4** | Product & Availability Agent — product resolution, inventory & delivery checks | ✅ **Complete** |
+| 5 | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ⏳ Not started |
+| 6 | Quote & Risk Agent — final quotation, risk scoring, human escalation | ⏳ Not started |
+| 7 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
+| 8 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
+| 9 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |
+| 10 | Frontend — web UI or Teams integration | ⏳ Not started |
 
 ---
 
