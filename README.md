@@ -503,6 +503,69 @@ python scripts/smoke_test_pricing_policy.py
 
 ---
 
+## Current Status — Phase 6: Quote & Risk Agent
+
+**Phase 6 is complete. No new Azure resources were created or modified.**
+
+| Component | Status |
+|-----------|--------|
+| `app/models/schemas.py` — `QuoteRiskResult` schema | ✅ Done |
+| `app/agents/quote_risk.py` — Quote & Risk Agent logic | ✅ Done |
+| `app/agents/__init__.py` — exports `run_quote_risk` | ✅ Done |
+| `tests/agents/test_quote_risk.py` — comprehensive test suite | ✅ Done |
+| `scripts/smoke_test_quote_risk.py` — live integration smoke test | ✅ Done |
+
+### What the Quote & Risk Agent Does
+
+The Quote & Risk Agent acts as the final decision point before human review or quote dispatch. It receives the outputs of all three previous agents and determines the definitive `quote_decision` and `risk_indicators`.
+
+```
+  StructuredRequest + FulfilmentResult + PricingPolicyResult
+                 │
+                 ▼
+┌─────────────────────────────────────────────────────┐
+│               Quote & Risk Agent                    │
+│   (FoundryChatClient + Agent + NO Phase 2 Tools)    │
+│                                                     │
+│  Synthesizes data and drafts reasons.               │
+│  Python logic strictly reconciles the final status. │
+└─────────────────────────────────────────────────────┘
+                 │
+                 ▼
+           QuoteRiskResult
+```
+
+### Architecture & Design Decisions
+
+| Decision | Choice | Reason |
+|----------|--------|--------|
+| Application Authoritative | Python enforces decision precedence | The Quote & Risk Agent synthesizes facts into natural language reasons, but the final `quote_decision` is dictated deterministically by the application to prevent LLM hallucinations. |
+| Risk Indicator Mapping | Strict derivation | `risk_indicators` are compiled directly from upstream flags (e.g. `inventory_status == "UNAVAILABLE"` maps strictly to `INVENTORY_UNAVAILABLE`). |
+| No Phase 2 Tools | Agent has empty `tools` list | This agent is a pure synthesis layer over structured data. Upstream math and inventory facts are immutable. |
+
+### Deterministic Precedence
+
+The final `quote_decision` follows this strict fallback order (highest to lowest):
+1. `REQUEST_CANNOT_BE_FULFILLED` — if Phase 4 is `UNAVAILABLE` or Phase 5 is `CREDIT_BLOCKED`/`POLICY_VIOLATION_FATAL`.
+2. `CUSTOMER_CLARIFICATION_REQUIRED` — if Phase 3 has missing info/ambiguities, Phase 4 is `CLARIFICATION_REQUIRED`/`PARTIAL`/`DELIVERY_CONFLICT`/`INSTALLATION_UNAVAILABLE`, or Phase 5 is `CLARIFICATION_REQUIRED`.
+3. `HUMAN_APPROVAL_REQUIRED` — if Phase 5 requires manager, director, or board approval.
+4. `QUOTE_READY` — only if all previous conditions pass cleanly.
+
+### How to Run the Phase 6 Tests
+
+```powershell
+# Unit tests only (offline — no API call):
+pytest tests/agents/test_quote_risk.py -v
+
+# Full suite (all phases, still offline):
+pytest tests/ -v
+
+# Live integration smoke test (requires .env and az login):
+python scripts/smoke_test_quote_risk.py
+```
+
+---
+
 ## What Is Already in Azure
 
 The following Azure resources are already created and configured (Azure for Students subscription):
@@ -528,7 +591,7 @@ The following are **planned for future phases** and do **not** exist yet:
 - [x] ~~**Request Understanding Agent**~~ — ✅ Completed in Phase 3 (`app/agents/request_understanding.py`)
 - [x] ~~**Product & Availability Agent**~~ — ✅ Completed in Phase 4 (`app/agents/product_availability.py`)
 - [x] ~~**Pricing & Policy Agent**~~ — ✅ Completed in Phase 5 (`app/agents/pricing_policy.py`)
-- [ ] **Quote & Risk Agent** (Phase 6)
+- [x] ~~**Quote & Risk Agent**~~ — ✅ Completed in Phase 6 (`app/agents/quote_risk.py`)
 - [ ] **Agent orchestration layer**
 - [ ] **Human-in-the-loop approval workflow**
 - [ ] **Evaluation and tracing** (Azure AI evaluation, OpenTelemetry)
@@ -765,7 +828,7 @@ The smoke test constructs a `StructuredRequest` with two items (one descriptive,
 | **3** | Request Understanding Agent — structured extraction of customer requests | ✅ **Complete** |
 | **4** | Product & Availability Agent — product resolution, inventory & delivery checks | ✅ **Complete** |
 | **5** | Pricing & Policy Agent — pricing, discount, margin, credit evaluation | ✅ **Complete** |
-| 6 | Quote & Risk Agent — final quotation, risk scoring, human escalation | ⏳ Not started |
+| **6** | Quote & Risk Agent — final quotation, risk scoring, human escalation | ✅ **Complete** |
 | 7 | Orchestration — multi-agent workflow, human-in-the-loop | ⏳ Not started |
 | 8 | Evaluation & Tracing — quality metrics, OpenTelemetry | ⏳ Not started |
 | 9 | Hosted Agent Deployment — containerised runtime on Foundry | ⏳ Not started |

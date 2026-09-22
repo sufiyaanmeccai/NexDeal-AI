@@ -484,3 +484,55 @@ class PricingPolicyResult(BaseModel):
         ...,
         description="Top-level commercial issues or policy blocks.",
     )
+
+# ===========================================================================
+# Phase 6 — Quote & Risk Agent output schemas
+# ===========================================================================
+
+
+class QuoteRiskResult(BaseModel):
+    """
+    Final decision and risk evaluation for a quoted order.
+
+    All fields are required.
+    """
+    request_id: str | None = Field(
+        ...,
+        description="Echoed from the upstream result."
+    )
+    customer_reference: str | None = Field(
+        ...,
+        description="Echoed from the upstream result."
+    )
+    quote_decision: Literal[
+        "QUOTE_READY", "HUMAN_APPROVAL_REQUIRED", "CUSTOMER_CLARIFICATION_REQUIRED", "REQUEST_CANNOT_BE_FULFILLED"
+    ] = Field(
+        ...,
+        description="Final definitive status determining if the quote can be sent to the customer."
+    )
+    risk_indicators: list[Literal[
+        "UNRESOLVED_PRODUCT", "MISSING_REQUIRED_INFORMATION", "INVENTORY_UNAVAILABLE", 
+        "PARTIAL_FULFILMENT", "DELIVERY_CONFLICT", "INSTALLATION_UNAVAILABLE", 
+        "CREDIT_BLOCKED", "POLICY_VIOLATION", "APPROVAL_REQUIRED", "COMMERCIAL_EVALUATION_INCOMPLETE"
+    ]] = Field(
+        ...,
+        description="List of specific risks flagged across the fulfilment and pricing phases."
+    )
+    reasons: list[str] = Field(
+        ...,
+        description="Natural language explanations supporting the decision and risk indicators."
+    )
+    financial_summary_total: str | None = Field(
+        ...,
+        description="Exactly preserving the Phase 5 grand total string."
+    )
+    approval_requirement: Literal[
+        "AUTO_APPROVED", "MANAGER_APPROVAL_REQUIRED", "DIRECTOR_APPROVAL_REQUIRED", "BOARD_APPROVAL_REQUIRED", "NOT_EVALUATED"
+    ] | None = Field(
+        ...,
+        description="Required approval level, copied exactly from Phase 5."
+    )
+    issues: list[str] = Field(
+        ...,
+        description="Any blocking issues discovered during synthesis."
+    )

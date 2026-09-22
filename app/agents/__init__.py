@@ -9,6 +9,7 @@ from app.agents.request_understanding import (
     understand_request_sync,
 )
 from app.agents.pricing_policy import run_pricing_policy, run_pricing_policy_sync
+from app.agents.quote_risk import run_quote_risk, run_quote_risk_sync
 
 __all__ = [
     "understand_request",
@@ -17,4 +18,6 @@ __all__ = [
     "check_availability_sync",
     "run_pricing_policy",
     "run_pricing_policy_sync",
+    "run_quote_risk",
+    "run_quote_risk_sync",
 ]
