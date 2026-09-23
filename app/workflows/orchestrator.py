@@ -12,7 +12,7 @@ from datetime import date
 from dataclasses import dataclass
 from typing import Any
 
-from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler
+from agent_framework import Executor, WorkflowBuilder, WorkflowContext, handler, response_handler, Message
 from agent_framework.observability import get_meter, get_tracer
 
 from app.telemetry import configure_telemetry
@@ -66,6 +66,14 @@ class Phase3Executor(Executor):
         req = await understand_request(msg.raw_request)
         ctx.set_state("structured_request", req)
         await ctx.send_message(req)
+
+    @handler
+    async def process_messages(self, msgs: list[Message], ctx: WorkflowContext[StructuredRequest]) -> None:
+        """Handles standard Agent messages (used when hosted) by delegating to process()."""
+        last_user = next((m for m in reversed(msgs) if m.role == "user"), None)
+        text = last_user.content[0].text if last_user and last_user.content else ""
+        from datetime import date
+        await self.process(WorkflowInput(raw_request=text, reference_date=date.today().isoformat()), ctx)
 
 
 class Phase4Executor(Executor):

@@ -1,0 +1,11 @@
+﻿name: NexDeal-AI
+services:
+  agent:
+    host: azure.ai.agent
+    project: .
+    language: docker
+    kind: hosted
+    startupCommand: uvicorn app.host:app --host 0.0.0.0 --port 8088
+    protocols:
+      - protocol: responses
+        version: 2.0.0

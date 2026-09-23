@@ -928,6 +928,24 @@ The smoke test constructs a `StructuredRequest` with two items (one descriptive,
 
 ---
 
+## Phase 11A: Local Hosting & Deployment Assets
+
+To run the host locally:
+```powershell
+uvicorn app.host:app --host 0.0.0.0 --port 8088
+```
+To build the container:
+```powershell
+docker build --platform linux/amd64 -t nexdeal-ai-host .
+```
+
+Foundry Hosted Agents require the container to expose GET `/readiness` (returning HTTP 200) and POST `/responses`. The `ResponsesHostServer` from the Agent Framework provides these automatically for Responses protocol version `2.0.0`.
+
+**Checkpoint / HITL Behavior (Phase 8):**
+The `ResponsesHostServer` handles checkpoints and Phase 8 Human Approval workflows natively by relying on Foundry's durable state stores automatically. Cosmos DB or Redis are not mandatory.
+
+---
+
 ## Project Roadmap
 
 | Phase | Description | Status |

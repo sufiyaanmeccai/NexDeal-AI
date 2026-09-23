@@ -4,10 +4,11 @@ azure-ai-projects>=2.3.0
 azure-identity
 python-dotenv
 pytest
-# Phase 3 — Agent Framework (Foundry) + schema validation
-agent-framework-foundry
+agent-framework==1.19.0
+agent-framework-foundry==1.13.1
 pydantic>=2,<3
 # Phase 9 - Observability
 opentelemetry-api
 opentelemetry-sdk
 azure-monitor-opentelemetry
+agent-framework-foundry-hosting==1.0.0b260918
