@@ -12,3 +12,6 @@ opentelemetry-api
 opentelemetry-sdk
 azure-monitor-opentelemetry
 agent-framework-foundry-hosting==1.0.0b260918
+# Phase 12 - Demo UI
+fastapi
+httpx

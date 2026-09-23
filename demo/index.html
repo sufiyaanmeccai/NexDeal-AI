@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NexDeal AI | B2B Quotation Workspace</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="app-header">
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            <span id="agent-status">Connecting...</span>
+        </div>
+    </header>
+
+    <main class="workspace">
+        <div class="hero-section">
+            <h1 class="main-logo">NEXDEAL AI</h1>
+            <h2 class="sub-logo">B2B QUOTATION WORKSPACE</h2>
+            <p class="tagline">Turning natural-language B2B requests into validated quotation decisions.</p>
+        </div>
+
+        <section class="request-panel">
+            <textarea id="request-input" placeholder="Type or paste a customer request here..."></textarea>
+
+            <div class="demo-scenarios">
+                <button type="button" class="scenario-btn" data-scenario="normal">Standard Request</button>
+                <button type="button" class="scenario-btn" data-scenario="multi">Multi-Product</button>
+                <button type="button" class="scenario-btn" data-scenario="clarification">Clarification Required</button>
+                <button type="button" class="scenario-btn" data-scenario="unfulfillable">Unfulfillable Constraint</button>
+            </div>
+
+            <button id="submit-btn" class="primary-btn">Analyze Request</button>
+        </section>
+
+        <section id="how-it-works" class="how-it-works">
+            <div class="how-step">
+                <h3>UNDERSTAND</h3>
+                <p>Understand the customer's natural-language request.</p>
+            </div>
+            <div class="how-step">
+                <h3>VALIDATE</h3>
+                <p>Check products, availability, delivery, pricing and policy.</p>
+            </div>
+            <div class="how-step">
+                <h3>DECIDE</h3>
+                <p>Determine whether the request is ready, needs clarification, requires approval, or cannot be fulfilled.</p>
+            </div>
+        </section>
+
+        <section class="results-panel" id="results-panel" style="display: none;">
+
+            <div class="decision-banner" id="decision-banner">
+                <div class="decision-icon" id="decision-icon"></div>
+                <div class="decision-text-content">
+                    <h2 id="decision-title">RESULT</h2>
+                    <p id="decision-explanation">Explanation</p>
+                </div>
+            </div>
+
+            <div class="results-grid">
+
+                <div class="details-column">
+                    <div class="info-card">
+                        <div class="info-row">
+                            <span class="info-label">Customer</span>
+                            <span class="info-val" id="customer-ref">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Delivery Date</span>
+                            <span class="info-val" id="delivery-date">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Installation</span>
+                            <span class="info-val" id="installation">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Requested Items</span>
+                            <div class="info-val" id="requested-items"></div>
+                        </div>
+                    </div>
+
+                    <div class="info-card financial-card">
+                        <h3>Financial Summary</h3>
+                        <div class="big-number" id="financial-total">₹0.00</div>
+                    </div>
+
+                    <div class="workflow-pipeline">
+                        <div class="stage" id="stage-understanding">1. Request Understanding</div>
+                        <div class="stage" id="stage-availability">2. Product & Availability</div>
+                        <div class="stage" id="stage-pricing">3. Pricing & Policy</div>
+                        <div class="stage" id="stage-risk">4. Quote & Risk</div>
+                        <div class="stage" id="stage-approval">5. Human Approval</div>
+                    </div>
+                </div>
+
+                <div class="insights-column">
+
+                    <div class="info-card issues-card" id="issues-section">
+                        <h3>Why?</h3>
+                        <ul id="issues-list" class="issues-list"></ul>
+                        <ul id="reasons-list" class="reasons"></ul>
+                    </div>
+
+                    <div class="info-card risk-card" id="risk-section">
+                        <h3>Risk & Policy Insights</h3>
+                        <ul id="risk-indicators" class="tag-list"></ul>
+                    </div>
+
+                    <div class="info-card approval-panel" id="approval-panel" style="display: none;">
+                        <h3>Human Approval</h3>
+                        <p>This request requires human review. Note: The backend Responses protocol does not expose a native HITL continuation payload for this demo UI.</p>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="reset-section">
+                <button id="reset-btn" class="secondary-btn">Analyze another request</button>
+            </div>
+        </section>
+
+        <div id="loading-overlay" class="overlay" style="display: none;">
+            <div class="processing-container">
+                <div class="spinner"></div>
+                <div class="processing-text">
+                    <h4>Analyzing request...</h4>
+                    <div id="loading-steps" class="loading-steps">
+                        <span class="active">Understanding request</span>
+                        <span>Validating policies</span>
+                        <span>Evaluating risk</span>
+                        <span>Preparing decision</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
