@@ -1,11 +1,27 @@
-﻿name: NexDeal-AI
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: NexDeal-AI
 services:
-  agent:
-    host: azure.ai.agent
-    project: .
-    language: docker
-    kind: hosted
-    startupCommand: uvicorn app.host:app --host 0.0.0.0 --port 8088
-    protocols:
-      - protocol: responses
-        version: 2.0.0
+    ai-project:
+        host: azure.ai.project
+        endpoint: ${FOUNDRY_PROJECT_ENDPOINT}
+    nexdeal-ai:
+        project: .
+        host: azure.ai.agent
+        language: docker
+        kind: hosted
+        name: nexdeal-ai
+        startupCommand: uvicorn app.host:app --host 0.0.0.0 --port 8088
+        docker:
+            remoteBuild: true
+        uses:
+            - ai-project
+        container:
+            resources:
+                cpu: "0.5"
+                memory: 1Gi
+        protocols:
+            - protocol: responses
+              version: 2.0.0
+infra:
+    provider: microsoft.foundry
