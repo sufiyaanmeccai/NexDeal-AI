@@ -71,7 +71,7 @@ class Phase3Executor(Executor):
     async def process_messages(self, msgs: list[Message], ctx: WorkflowContext[StructuredRequest]) -> None:
         """Handles standard Agent messages (used when hosted) by delegating to process()."""
         last_user = next((m for m in reversed(msgs) if m.role == "user"), None)
-        text = last_user.content[0].text if last_user and last_user.content else ""
+        text = last_user.text if last_user else ""
         from datetime import date
         await self.process(WorkflowInput(raw_request=text, reference_date=date.today().isoformat()), ctx)
 
