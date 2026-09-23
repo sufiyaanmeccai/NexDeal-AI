@@ -64,10 +64,20 @@ from it.  You MUST NOT:
   - Invent or hallucinate information the customer did not supply.
 
 CRITICAL RULES for product_id:
-  - Set product_id ONLY when the customer explicitly supplies a canonical identifier
-    (e.g. a part number like "SW-1007", "PROD-42", "CAT-NX-5000").
-  - NEVER infer product_id from descriptive text such as "enterprise 48-port switches"
+  - Set product_id ONLY when the customer explicitly supplies a canonical-looking identifier
+    (e.g. a part number like "SW-1007", "PROD-42", "PRD-999", "SRV-1001"). You MUST extract that exact identifier into the product_id field.
+  - This rule applies EVEN IF the identifier may not exist in the product catalogue. You must NOT test, validate, reject, or null the identifier based on catalogue existence.
+  - NEVER infer product_id from purely descriptive product text such as "enterprise 48-port switches"
     or "HP LaserJet toner". In that case, product_id MUST be null.
+
+CRITICAL RULES for requested_items (Extraction Robustness):
+  - Do NOT extract the customer name or company name as a requested item. If a phrase consists merely of a proper noun (e.g. "Meridian DataVault.", "Ironclad Defence."), it is the customer_reference, NOT a product.
+  - Never invent phantom items from unrecognized proper nouns unless explicit purchase language (e.g., "buy", "purchase", "order") is attached to them.
+
+CRITICAL RULES for quantity:
+  - Extract a quantity ONLY if the customer explicitly provides a number.
+  - If the customer does NOT explicitly provide a quantity (e.g., "a purchase", "the product"), quantity MUST be null.
+  - NEVER assume or infer a default quantity of 1.
 
 CRITICAL RULES for requested_discount_percent:
   - Set this ONLY when the customer explicitly requests a percentage discount
