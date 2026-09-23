@@ -773,14 +773,14 @@ class TestArchitecturalBoundaries:
             "product_availability.py must NOT import from app.tools.customers"
         )
 
-    def test_azure_cli_credential_used(self):
-        """Must use AzureCliCredential, NOT DefaultAzureCredential."""
+    def test_default_azure_credential_used(self):
+        """Must use DefaultAzureCredential, NOT AzureCliCredential."""
         import pathlib
         source = pathlib.Path(
             "app/agents/product_availability.py"
         ).read_text(encoding="utf-8")
-        assert "AzureCliCredential" in source
-        assert "DefaultAzureCredential" not in source
+        assert "DefaultAzureCredential" in source
+        assert "AzureCliCredential" not in source
 
     def test_foundry_chat_client_pattern(self):
         """Must use FoundryChatClient + Agent pattern."""

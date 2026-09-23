@@ -13,7 +13,7 @@ Architectural boundaries (Phase 3)
   calculate prices, check delivery feasibility, apply business rules, or resolve
   product descriptions to canonical product IDs.  Those concerns belong to later
   pipeline stages.
-* Authentication: ``AzureCliCredential`` (NOT ``DefaultAzureCredential``).
+* Authentication: ``DefaultAzureCredential`` (supports both local development and Foundry Hosted Agent runtime).
 * Client pattern: ``Agent(client=FoundryChatClient(...))`` — the code-first,
   direct-inference pattern.  Phase 0's ``AIProjectClient`` approach is left
   untouched.
@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import asyncio
 
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
@@ -148,7 +148,7 @@ def build_agent() -> Agent:
     client = FoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.foundry_model_name,
-        credential=AzureCliCredential(),
+        credential=DefaultAzureCredential(),
     )
     return Agent(
         client=client,

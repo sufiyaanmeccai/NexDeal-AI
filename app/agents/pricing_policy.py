@@ -23,7 +23,7 @@ import json
 from decimal import Decimal
 from typing import Literal
 
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 
 from agent_framework import Agent, tool
 from agent_framework.foundry import FoundryChatClient
@@ -213,7 +213,7 @@ def build_agent() -> Agent:
     client = FoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.foundry_model_name,
-        credential=AzureCliCredential(),
+        credential=DefaultAzureCredential(),
     )
     return Agent(
         client=client,

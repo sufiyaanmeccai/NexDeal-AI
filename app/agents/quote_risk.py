@@ -12,7 +12,7 @@ from __future__ import annotations
 import asyncio
 from typing import Literal
 
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 from agent_framework import Agent
 from agent_framework.foundry import FoundryChatClient
 
@@ -42,7 +42,7 @@ def build_quote_risk_agent() -> Agent:
     client = FoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.foundry_model_name,
-        credential=AzureCliCredential(),
+        credential=DefaultAzureCredential(),
     )
     return Agent(
         client=client,

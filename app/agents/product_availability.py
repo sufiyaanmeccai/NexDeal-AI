@@ -29,7 +29,7 @@ Architectural boundaries (Phase 4)
 * Date safety: ``reference_date`` is injected explicitly at call time; the
   agent never reads the system clock.
 
-* Authentication: ``AzureCliCredential`` (same as Phase 3).
+* Authentication: ``DefaultAzureCredential`` (supports both local development and Foundry Hosted Agent runtime).
 
 Usage example::
 
@@ -51,7 +51,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from azure.identity import AzureCliCredential
+from azure.identity import DefaultAzureCredential
 
 from agent_framework import Agent, tool
 from agent_framework.foundry import FoundryChatClient
@@ -448,7 +448,7 @@ def build_agent(reference_date: date) -> Agent:
     client = FoundryChatClient(
         project_endpoint=settings.foundry_project_endpoint,
         model=settings.foundry_model_name,
-        credential=AzureCliCredential(),
+        credential=DefaultAzureCredential(),
     )
     instructions = _SYSTEM_INSTRUCTIONS_TEMPLATE.format(
         reference_date=reference_date.isoformat()

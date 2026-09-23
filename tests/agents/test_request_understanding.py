@@ -689,24 +689,22 @@ class TestAgentModuleBoundaries:
                 "request_understanding.py"
             )
 
-    def test_uses_azure_cli_credential_not_default(self):
+    def test_uses_default_azure_credential(self):
         """
-        The agent must import AzureCliCredential.
-        DefaultAzureCredential must NOT appear on any import line.
+        The agent must import DefaultAzureCredential.
+        AzureCliCredential must NOT appear on any import line.
         """
         import inspect
         import app.agents.request_understanding as m
         source = inspect.getsource(m)
-        assert "AzureCliCredential" in source, "Agent must use AzureCliCredential"
-        # Check import lines only — the docstring may mention DefaultAzureCredential
-        # in a warning context.
+        assert "DefaultAzureCredential" in source, "Agent must use DefaultAzureCredential"
         import_lines = [
             line for line in source.splitlines()
             if line.strip().startswith(("import ", "from "))
         ]
         import_source = "\n".join(import_lines)
-        assert "DefaultAzureCredential" not in import_source, (
-            "Agent must NOT import DefaultAzureCredential — use AzureCliCredential.\n"
+        assert "AzureCliCredential" not in import_source, (
+            "Agent must NOT import AzureCliCredential — use DefaultAzureCredential.\n"
             f"Import lines:\n{import_source}"
         )
 
